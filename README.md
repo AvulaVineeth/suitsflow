@@ -852,4 +852,42 @@ The implementation and architecture will evolve incrementally as new capabilitie
 
 ## 📌 Disclaimer
 
-SuitsFlow is an independent engineering project created for learning, experimentation, and demonstration of enterprise AI architecture patterns. It is not affiliated with or endorsed by Mitratech.
+SuitsFlow is an independent engineering project created for learning, experimentation, and demonstration of enterprise AI architecture patterns. It is not affiliated with or endorsed by any Company/Organization.
+
+---
+
+## Local development
+
+The first application slice is a FastAPI service with liveness and readiness endpoints. Python 3.11 is the supported local runtime.
+
+```bash
+python -m pip install uv==0.11.28
+uv sync --locked --extra dev
+uv run --no-sync uvicorn suitsflow.main:app --reload
+```
+
+Then visit `http://localhost:8000/api/v1/health`.
+
+Settings have local defaults; optionally copy `.env.example` to `.env` (PowerShell:
+`Copy-Item .env.example .env`). Dependencies are resolved in the committed `uv.lock`;
+update it deliberately when changing dependencies. If your network uses a trusted
+system certificate, use `uv --system-certs sync --locked --extra dev`.
+
+Currently `/api/v1/ready` checks application startup only. PostgreSQL connectivity
+and migrations will be added in the persistence slice; an `ok` response does not yet
+certify database availability.
+
+To run the API with local PostgreSQL:
+
+```bash
+docker compose up --build
+```
+
+Run the quality suite before committing:
+
+```bash
+uv run --no-sync ruff format --check src tests
+uv run --no-sync ruff check src tests
+uv run --no-sync mypy src
+uv run --no-sync pytest
+```

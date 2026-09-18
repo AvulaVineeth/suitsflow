@@ -1,0 +1,32 @@
+services:
+  api:
+    build:
+      context: .
+    environment:
+      SUITSFLOW_ENVIRONMENT: local
+      SUITSFLOW_DEBUG: "true"
+      SUITSFLOW_DATABASE_URL: postgresql+asyncpg://suitsflow:suitsflow@postgres:5432/suitsflow
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: suitsflow
+      POSTGRES_USER: suitsflow
+      POSTGRES_PASSWORD: suitsflow
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U suitsflow -d suitsflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:
