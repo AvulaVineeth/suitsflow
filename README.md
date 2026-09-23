@@ -945,9 +945,8 @@ Authentication is disabled by default: protected routes return 401 until a provi
 is configured. This slice supplies an **opt-in local development provider**, using
 one opaque bearer token mapped to one server-configured user and tenant identity. It is not JWT or
 OAuth authentication and cannot be enabled in staging or production. Verified
-production identity, richer policies, and audit records for future
-mutations remain separate implementation work. No tenant creation or update API is
-exposed yet.
+production identity and richer policies remain separate implementation work.
+Tenant creation and membership administration APIs are not exposed yet.
 
 For the locally running `uvicorn` process, set these values in `.env`:
 
@@ -978,3 +977,27 @@ without restarting the API. There are no membership mutation endpoints yet.
 Apply `alembic upgrade head` before using the endpoint; existing tenant rows are
 preserved, but users and role assignments must be explicitly provisioned. Downgrading
 to `0001` preserves tenants and removes membership data.
+
+### Audited tenant updates
+
+`PATCH /api/v1/tenants/{tenant_id}` accepts `{"name": "New tenant name"}` for an
+active tenant administrator in that tenant. Names are trimmed and must contain
+1–255 characters; unknown fields are rejected. Tenant status and membership cannot
+be changed through this endpoint.
+
+Migration `0003` adds `audit_logs`. Each successful name change and its audit record
+commit in one transaction. If audit writing fails, the name change rolls back.
+Row locking serializes concurrent updates so each record captures the correct
+previous and new name. Repeating the current name returns it without adding a log.
+Records include tenant, actor, action, resource, timestamp, and name before/after;
+bearer tokens and arbitrary request bodies are not stored.
+
+A PostgreSQL trigger rejects audit `UPDATE`, `DELETE`, and `TRUNCATE`. Composite
+foreign keys require the actor to belong to the audited tenant. This is protection
+against application mistakes, not tamper-proof storage against a database owner or
+superuser, who can disable triggers or drop tables. Production deployment still
+needs a restricted runtime database role distinct from the migration owner.
+Downgrading to `0002` removes audit history and should only be done in a disposable
+development database. Audit retrieval and broader read/denial auditing remain future work.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the feature-branch and merge workflow.

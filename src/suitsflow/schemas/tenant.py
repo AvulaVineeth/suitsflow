@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 
 class TenantResponse(BaseModel):
@@ -13,3 +13,9 @@ class TenantResponse(BaseModel):
     status: Literal["active", "suspended"]
     created_at: datetime
     updated_at: datetime
+
+
+class TenantNameUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]

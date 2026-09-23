@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -10,6 +11,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from suitsflow.db.base import Base
@@ -82,3 +84,23 @@ class UserRole(Base):
     tenant_id: Mapped[UUID] = mapped_column(primary_key=True)
     user_id: Mapped[UUID] = mapped_column(primary_key=True)
     role_id: Mapped[UUID] = mapped_column(primary_key=True)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "user_id"], ["users.tenant_id", "users.id"], ondelete="RESTRICT"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="RESTRICT"), index=True
+    )
+    user_id: Mapped[UUID] = mapped_column()
+    action: Mapped[str] = mapped_column(String(100))
+    resource_type: Mapped[str] = mapped_column(String(100))
+    resource_id: Mapped[UUID] = mapped_column()
+    details: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -43,7 +43,8 @@ def test_development_auth_is_disabled_by_default() -> None:
     assert response.status_code == 401
 
 
-def test_member_cannot_read_tenant_administration() -> None:
+@pytest.mark.parametrize("method", ["get", "patch"])
+def test_member_cannot_access_tenant_administration(method: str) -> None:
     settings = development_settings()
     app = create_app(settings)
     app.dependency_overrides[get_principal] = lambda: Principal(
@@ -52,9 +53,11 @@ def test_member_cannot_read_tenant_administration() -> None:
         roles=frozenset({"member"}),
     )
     with TestClient(app) as client:
-        response = client.get(
+        response = client.request(
+            method,
             f"/api/v1/tenants/{settings.development_tenant_id}",
             headers={"Authorization": f"Bearer {TOKEN}", "X-Role": "tenant_admin"},
+            **({"json": {"name": "Forbidden rename"}} if method == "patch" else {}),
         )
     assert response.status_code == 403
 

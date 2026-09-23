@@ -12,6 +12,7 @@ from pydantic import SecretStr
 from sqlalchemy import inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
+from tests.integration.audit_checks import exercise_audited_updates
 from tests.integration.membership_checks import (
     exercise_memberships,
     revoke_roles,
@@ -132,6 +133,7 @@ def test_postgresql_migrations_sessions_and_readiness(
                 )
                 assert response.status_code == 404
                 assert response.json() == {"detail": "Tenant not found"}
+            exercise_audited_updates(client, settings, tenant_id, other_tenant_id, user_id, headers)
             asyncio.run(set_access_status(settings, user_id, tenant_id, active=False))
             assert client.get(f"/api/v1/tenants/{tenant_id}", headers=headers).status_code == 403
             asyncio.run(set_access_status(settings, user_id, tenant_id, active=True))
