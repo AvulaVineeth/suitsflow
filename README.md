@@ -935,16 +935,17 @@ use downgrade only against disposable development databases.
 
 `GET /api/v1/tenants/{tenant_id}` follows route → service → repository boundaries.
 Only a `tenant_admin` can read the administrative details of their own active tenant.
-Missing or invalid credentials return 401, a `member` receives 403, and inaccessible,
-suspended, or nonexistent tenants return the same 404 response. Tenant and role
+Missing or invalid credentials return 401. Unknown or disabled users, inactive tenant
+membership, and insufficient roles return 403. With valid membership, inaccessible
+or nonexistent target tenants return the same 404 response. Tenant and role
 headers do not select an identity or change access. The repository applies the
 authenticated tenant scope to its query, and services enforce the role policy.
 
 Authentication is disabled by default: protected routes return 401 until a provider
 is configured. This slice supplies an **opt-in local development provider**, using
-one opaque bearer token mapped to one server-configured principal. It is not JWT or
+one opaque bearer token mapped to one server-configured user and tenant identity. It is not JWT or
 OAuth authentication and cannot be enabled in staging or production. Verified
-production identity, memberships, richer policies, and audit records for future
+production identity, richer policies, and audit records for future
 mutations remain separate implementation work. No tenant creation or update API is
 exposed yet.
 
@@ -953,15 +954,27 @@ For the locally running `uvicorn` process, set these values in `.env`:
 ```dotenv
 SUITSFLOW_DEVELOPMENT_AUTH_ENABLED=true
 SUITSFLOW_DEVELOPMENT_AUTH_TOKEN=<random token of at least 32 characters>
-SUITSFLOW_DEVELOPMENT_USER_ID=<development user UUID>
+SUITSFLOW_DEVELOPMENT_USER_ID=<existing active user UUID in the selected tenant>
 SUITSFLOW_DEVELOPMENT_TENANT_ID=<existing active tenant UUID>
-SUITSFLOW_DEVELOPMENT_ROLE=tenant_admin
 ```
 
 Generate a token with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
-Keep it in the ignored `.env` file. The user UUID is a development identity, not yet
-linked to a users table; the tenant UUID must reference a row created in your local
-database. Supply `Authorization: Bearer <token>` when calling the endpoint. The
+Keep it in the ignored `.env` file. The user must exist in `users` within the selected
+tenant and have a `tenant_admin` assignment through `roles` and `user_roles` to read
+tenant administration. Roles are read from PostgreSQL on every request; the former
+`SUITSFLOW_DEVELOPMENT_ROLE` setting no longer grants access and should be removed.
+Supply `Authorization: Bearer <token>` when calling the endpoint. The
 Compose API does not inherit these opt-in settings; use the local `uvicorn` process
 for this development flow. Integration tests provision their own tenants and exercise
 successful reads, denied roles, cross-tenant access attempts, and suspended tenants.
+
+Migration `0002` adds tenant-owned users, roles, and assignments. User emails must be
+trimmed and lowercase, with uniqueness within a tenant. Supported roles are
+`tenant_admin` and `member`; tenant administration currently requires `tenant_admin`.
+Composite foreign keys prevent a user from receiving a role from another tenant,
+and restrictive delete rules prevent accidental removal of referenced records.
+Disabling a user, suspending a tenant, or revoking roles affects subsequent requests
+without restarting the API. There are no membership mutation endpoints yet.
+Apply `alembic upgrade head` before using the endpoint; existing tenant rows are
+preserved, but users and role assignments must be explicitly provisioned. Downgrading
+to `0001` preserves tenants and removes membership data.

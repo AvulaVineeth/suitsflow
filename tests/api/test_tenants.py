@@ -4,7 +4,9 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr, ValidationError
 
+from suitsflow.api.dependencies import get_principal
 from suitsflow.core.config import Settings
+from suitsflow.core.security import Principal
 from suitsflow.main import create_app
 
 TOKEN = "test-only-token-with-at-least-32-characters"
@@ -18,7 +20,6 @@ def development_settings(**overrides: object) -> Settings:
         "development_auth_token": SecretStr(TOKEN),
         "development_user_id": uuid4(),
         "development_tenant_id": uuid4(),
-        "development_role": "tenant_admin",
     }
     values.update(overrides)
     return Settings(**values)
@@ -43,8 +44,14 @@ def test_development_auth_is_disabled_by_default() -> None:
 
 
 def test_member_cannot_read_tenant_administration() -> None:
-    settings = development_settings(development_role="member")
-    with TestClient(create_app(settings)) as client:
+    settings = development_settings()
+    app = create_app(settings)
+    app.dependency_overrides[get_principal] = lambda: Principal(
+        user_id=settings.development_user_id,
+        tenant_id=settings.development_tenant_id,
+        roles=frozenset({"member"}),
+    )
+    with TestClient(app) as client:
         response = client.get(
             f"/api/v1/tenants/{settings.development_tenant_id}",
             headers={"Authorization": f"Bearer {TOKEN}", "X-Role": "tenant_admin"},

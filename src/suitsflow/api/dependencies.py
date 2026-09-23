@@ -3,17 +3,20 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from suitsflow.core.config import Settings
-from suitsflow.core.security import Principal
+from suitsflow.core.security import Identity, Principal
+from suitsflow.db.session import get_session
+from suitsflow.repositories.memberships import MembershipRepository
 
 bearer = HTTPBearer(auto_error=False)
 
 
-def get_principal(
+def get_identity(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
-) -> Principal:
+) -> Identity:
     """Resolve only server-configured local identity; production identity comes later."""
     settings: Settings = request.app.state.settings
     if (
@@ -33,8 +36,17 @@ def get_principal(
             detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return Principal(
+    return Identity(
         user_id=settings.development_user_id,
         tenant_id=settings.development_tenant_id,
-        roles=frozenset({settings.development_role}),
     )
+
+
+async def get_principal(
+    identity: Annotated[Identity, Depends(get_identity)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Principal:
+    principal = await MembershipRepository(session).get_principal(identity)
+    if principal is None:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return principal

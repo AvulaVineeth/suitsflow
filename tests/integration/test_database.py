@@ -12,6 +12,11 @@ from pydantic import SecretStr
 from sqlalchemy import inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
+from tests.integration.membership_checks import (
+    exercise_memberships,
+    revoke_roles,
+    set_access_status,
+)
 
 from suitsflow.core.config import Settings, get_settings
 from suitsflow.db.models import Tenant
@@ -101,6 +106,7 @@ def test_postgresql_migrations_sessions_and_readiness(
                 await db.dispose()
 
         asyncio.run(exercise_sessions())
+        user_id = asyncio.run(exercise_memberships(settings, tenant_id, other_tenant_id))
         with TestClient(create_app(settings)) as client:
             assert client.get("/api/v1/ready").status_code == 200
         token = "integration-only-token-at-least-32-characters"
@@ -109,9 +115,8 @@ def test_postgresql_migrations_sessions_and_readiness(
             environment="test",
             development_auth_enabled=True,
             development_auth_token=SecretStr(token),
-            development_user_id=uuid4(),
+            development_user_id=user_id,
             development_tenant_id=tenant_id,
-            development_role="tenant_admin",
         )
         with TestClient(create_app(auth_settings)) as client:
             headers = {"Authorization": f"Bearer {token}"}
@@ -127,14 +132,31 @@ def test_postgresql_migrations_sessions_and_readiness(
                 )
                 assert response.status_code == 404
                 assert response.json() == {"detail": "Tenant not found"}
+            asyncio.run(set_access_status(settings, user_id, tenant_id, active=False))
+            assert client.get(f"/api/v1/tenants/{tenant_id}", headers=headers).status_code == 403
+            asyncio.run(set_access_status(settings, user_id, tenant_id, active=True))
+            assert client.get(f"/api/v1/tenants/{tenant_id}", headers=headers).status_code == 200
+            asyncio.run(revoke_roles(settings, user_id))
+            response = client.get(
+                f"/api/v1/tenants/{tenant_id}", headers={**headers, "X-Role": "tenant_admin"}
+            )
+            assert response.status_code == 403
         suspended_settings = auth_settings.model_copy(
             update={"development_tenant_id": suspended_tenant_id}
         )
         with TestClient(create_app(suspended_settings)) as client:
             assert (
                 client.get(f"/api/v1/tenants/{suspended_tenant_id}", headers=headers).status_code
-                == 404
+                == 403
             )
+        for invalid_user in (uuid4(),):
+            unknown_settings = auth_settings.model_copy(
+                update={"development_user_id": invalid_user}
+            )
+            with TestClient(create_app(unknown_settings)) as client:
+                response = client.get(f"/api/v1/tenants/{tenant_id}", headers=headers)
+                assert response.status_code == 403
+                assert response.json() == {"detail": "Access denied"}
         invalid_url = make_url(url).set(password="incorrect-test-password")
         invalid_settings = Settings(
             database_url=invalid_url.render_as_string(hide_password=False), environment="test"
@@ -144,6 +166,10 @@ def test_postgresql_migrations_sessions_and_readiness(
             assert response.status_code == 503
             assert response.json() == {"detail": "Database unavailable"}
             assert client.get("/api/v1/health").status_code == 200
+        command.downgrade(config, "0001")
+        assert sorted(asyncio.run(tables())) == ["alembic_version", "tenants"]
+        command.upgrade(config, "head")
+        command.check(config)
         command.downgrade(config, "base")
         assert asyncio.run(tables()) == ["alembic_version"]
         command.upgrade(config, "head")

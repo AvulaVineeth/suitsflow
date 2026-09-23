@@ -28,7 +28,6 @@ class Settings(BaseSettings):
     development_auth_token: SecretStr | None = None
     development_user_id: UUID | None = None
     development_tenant_id: UUID | None = None
-    development_role: Literal["tenant_admin", "member"] = "member"
 
     @model_validator(mode="after")
     def validate_development_auth(self) -> "Settings":

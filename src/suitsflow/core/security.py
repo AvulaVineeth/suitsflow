@@ -3,6 +3,12 @@ from uuid import UUID
 
 
 @dataclass(frozen=True)
+class Identity:
+    user_id: UUID
+    tenant_id: UUID
+
+
+@dataclass(frozen=True)
 class Principal:
     user_id: UUID
     tenant_id: UUID
