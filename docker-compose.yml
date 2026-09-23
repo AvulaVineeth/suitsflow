@@ -12,6 +12,23 @@ services:
       postgres:
         condition: service_healthy
 
+  postgres-test:
+    image: postgres:16-alpine
+    profiles: [test]
+    environment:
+      POSTGRES_DB: suitsflow_test
+      POSTGRES_USER: suitsflow
+      POSTGRES_PASSWORD: suitsflow
+    ports:
+      - "127.0.0.1:5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U suitsflow -d suitsflow_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   postgres:
     image: postgres:16-alpine
     environment:

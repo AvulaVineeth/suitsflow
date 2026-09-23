@@ -12,6 +12,8 @@ RUN addgroup --system app && adduser --system --ingroup app app
 
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
+COPY alembic.ini ./
+COPY migrations ./migrations
 RUN uv sync --locked --no-dev --no-editable
 ENV PATH="/app/.venv/bin:$PATH"
 
