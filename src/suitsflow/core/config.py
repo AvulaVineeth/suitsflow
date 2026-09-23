@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +22,7 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     log_level: str = "INFO"
     database_url: str = "postgresql+asyncpg://suitsflow:suitsflow@localhost:5432/suitsflow"
+    database_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
 
 
 @lru_cache
