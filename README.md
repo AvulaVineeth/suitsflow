@@ -930,3 +930,38 @@ To add a migration, edit the models, run
 the generated upgrade and downgrade before applying it. `alembic check` detects
 model/schema drift. Downgrading revision `0001` deletes the tenant table and its data;
 use downgrade only against disposable development databases.
+
+### Tenant access development slice
+
+`GET /api/v1/tenants/{tenant_id}` follows route → service → repository boundaries.
+Only a `tenant_admin` can read the administrative details of their own active tenant.
+Missing or invalid credentials return 401, a `member` receives 403, and inaccessible,
+suspended, or nonexistent tenants return the same 404 response. Tenant and role
+headers do not select an identity or change access. The repository applies the
+authenticated tenant scope to its query, and services enforce the role policy.
+
+Authentication is disabled by default: protected routes return 401 until a provider
+is configured. This slice supplies an **opt-in local development provider**, using
+one opaque bearer token mapped to one server-configured principal. It is not JWT or
+OAuth authentication and cannot be enabled in staging or production. Verified
+production identity, memberships, richer policies, and audit records for future
+mutations remain separate implementation work. No tenant creation or update API is
+exposed yet.
+
+For the locally running `uvicorn` process, set these values in `.env`:
+
+```dotenv
+SUITSFLOW_DEVELOPMENT_AUTH_ENABLED=true
+SUITSFLOW_DEVELOPMENT_AUTH_TOKEN=<random token of at least 32 characters>
+SUITSFLOW_DEVELOPMENT_USER_ID=<development user UUID>
+SUITSFLOW_DEVELOPMENT_TENANT_ID=<existing active tenant UUID>
+SUITSFLOW_DEVELOPMENT_ROLE=tenant_admin
+```
+
+Generate a token with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+Keep it in the ignored `.env` file. The user UUID is a development identity, not yet
+linked to a users table; the tenant UUID must reference a row created in your local
+database. Supply `Authorization: Bearer <token>` when calling the endpoint. The
+Compose API does not inherit these opt-in settings; use the local `uvicorn` process
+for this development flow. Integration tests provision their own tenants and exercise
+successful reads, denied roles, cross-tenant access attempts, and suspended tenants.

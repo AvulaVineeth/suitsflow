@@ -1,7 +1,8 @@
 from functools import lru_cache
 from typing import Literal
+from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +24,27 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     database_url: str = "postgresql+asyncpg://suitsflow:suitsflow@localhost:5432/suitsflow"
     database_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    development_auth_enabled: bool = False
+    development_auth_token: SecretStr | None = None
+    development_user_id: UUID | None = None
+    development_tenant_id: UUID | None = None
+    development_role: Literal["tenant_admin", "member"] = "member"
+
+    @model_validator(mode="after")
+    def validate_development_auth(self) -> "Settings":
+        if self.development_auth_enabled:
+            if self.environment not in {"local", "test"}:
+                raise ValueError("Development authentication is allowed only in local/test")
+            if (
+                self.development_auth_token is None
+                or len(self.development_auth_token.get_secret_value()) < 32
+                or self.development_user_id is None
+                or self.development_tenant_id is None
+            ):
+                raise ValueError(
+                    "Development authentication needs IDs and a token of 32+ characters"
+                )
+        return self
 
 
 @lru_cache
