@@ -873,21 +873,60 @@ Settings have local defaults; optionally copy `.env.example` to `.env` (PowerShe
 update it deliberately when changing dependencies. If your network uses a trusted
 system certificate, use `uv --system-certs sync --locked --extra dev`.
 
-Currently `/api/v1/ready` checks application startup only. PostgreSQL connectivity
-and migrations will be added in the persistence slice; an `ok` response does not yet
-certify database availability.
+`/api/v1/health` checks process liveness. `/api/v1/ready` executes a PostgreSQL query
+and returns 503 if the database is unavailable or exceeds the configured timeout
+(default three seconds). Readiness checks connectivity, not migration currency.
 
 To run the API with local PostgreSQL:
 
 ```bash
-docker compose up --build
+docker compose up -d postgres
+docker compose build api
+docker compose run --rm api alembic upgrade head
+docker compose up -d api
 ```
 
 Run the quality suite before committing:
 
 ```bash
-uv run --no-sync ruff format --check src tests
-uv run --no-sync ruff check src tests
+uv run --no-sync ruff format --check src tests migrations
+uv run --no-sync ruff check src tests migrations
 uv run --no-sync mypy src
 uv run --no-sync pytest
 ```
+
+### Database migrations and integration tests
+
+For a locally running API, start PostgreSQL and apply migrations with
+`uv run --no-sync alembic upgrade head`. Migrations read `SUITSFLOW_DATABASE_URL`
+from the environment or `.env`. Apply them once as a deployment step before
+starting API workers; application startup does not create or modify tables.
+
+The initial migration creates `tenants` with UUID identifiers, timezone-aware
+timestamps, a nonblank name, and an `active` or `suspended` status. UUIDs are assigned
+by the ORM; direct SQL inserts must supply one. SQLAlchemy updates `updated_at` on
+ORM updates; direct SQL writers must set it explicitly. Tenant-scoped authorization
+and additional domain tables will be implemented in subsequent slices.
+
+Sessions are scoped to a request. Services explicitly commit successful transactions;
+session cleanup rolls back uncommitted changes. A session must not be shared across
+concurrent tasks. The application disposes its connection pool on shutdown.
+
+Integration tests need an **empty, disposable database** whose name ends in `_test`.
+They apply migrations, exercise constraints and transactions, verify readiness,
+check model/schema drift, and downgrade/upgrade before removing the test schema.
+CI supplies a dedicated PostgreSQL 16 service. To run locally in PowerShell:
+
+```powershell
+docker compose --profile test up -d --wait postgres-test
+$env:SUITSFLOW_TEST_DATABASE_URL = "postgresql+asyncpg://suitsflow:suitsflow@localhost:5433/suitsflow_test"
+uv run --no-sync pytest
+docker compose --profile test stop postgres-test
+```
+
+Without `SUITSFLOW_TEST_DATABASE_URL`, PostgreSQL integration tests are skipped.
+To add a migration, edit the models, run
+`uv run --no-sync alembic revision --autogenerate -m "describe change"`, and review
+the generated upgrade and downgrade before applying it. `alembic check` detects
+model/schema drift. Downgrading revision `0001` deletes the tenant table and its data;
+use downgrade only against disposable development databases.

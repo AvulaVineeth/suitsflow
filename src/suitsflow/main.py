@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from suitsflow.api.router import api_router
 from suitsflow.core.config import Settings, get_settings
+from suitsflow.db.session import Database
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -14,7 +15,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = application_settings
-        yield
+        database = Database(application_settings)
+        app.state.database = database
+        try:
+            yield
+        finally:
+            await database.dispose()
 
     app = FastAPI(
         title=application_settings.app_name,

@@ -11,6 +11,20 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: suitsflow_test
+          POSTGRES_USER: suitsflow
+          POSTGRES_PASSWORD: suitsflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U suitsflow -d suitsflow_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      SUITSFLOW_TEST_DATABASE_URL: postgresql+asyncpg://suitsflow:suitsflow@localhost:5432/suitsflow_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,9 +35,9 @@ jobs:
           python -m pip install uv==0.11.28
           uv sync --locked --extra dev
       - name: Check formatting
-        run: uv run --no-sync ruff format --check src tests
+        run: uv run --no-sync ruff format --check src tests migrations
       - name: Lint
-        run: uv run --no-sync ruff check src tests
+        run: uv run --no-sync ruff check src tests migrations
       - name: Type check
         run: uv run --no-sync mypy src
       - name: Test
