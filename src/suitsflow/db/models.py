@@ -3,10 +3,12 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Integer,
     String,
     UniqueConstraint,
     func,
@@ -103,4 +105,63 @@ class AuditLog(Base):
     resource_type: Mapped[str] = mapped_column(String(100))
     resource_id: Mapped[UUID] = mapped_column()
     details: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Document(Base):
+    __tablename__ = "documents"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id"),
+        ForeignKeyConstraint(
+            ["tenant_id", "created_by"], ["users.tenant_id", "users.id"], ondelete="RESTRICT"
+        ),
+        CheckConstraint("length(trim(name)) > 0", name="name_not_blank"),
+        CheckConstraint("document_type IN ('contract', 'policy', 'other')", name="valid_type"),
+        CheckConstraint("status = 'draft'", name="valid_status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(ForeignKey("tenants.id", ondelete="RESTRICT"))
+    name: Mapped[str] = mapped_column(String(255))
+    document_type: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(32), server_default="draft")
+    created_by: Mapped[UUID] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class DocumentVersion(Base):
+    __tablename__ = "document_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "document_id", "version_number", name="uq_document_versions_number"
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "document_id"],
+            ["documents.tenant_id", "documents.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "created_by"], ["users.tenant_id", "users.id"], ondelete="RESTRICT"
+        ),
+        CheckConstraint("version_number > 0", name="positive_number"),
+        CheckConstraint("file_size > 0 AND file_size <= 104857600", name="valid_file_size"),
+        CheckConstraint("checksum ~ '^[0-9a-f]{64}$'", name="valid_checksum"),
+        CheckConstraint(
+            "mime_type IN ('application/pdf', 'text/plain', "
+            "'application/vnd.openxmlformats-officedocument.wordprocessingml.document')",
+            name="valid_mime_type",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column()
+    document_id: Mapped[UUID] = mapped_column()
+    version_number: Mapped[int] = mapped_column(Integer)
+    mime_type: Mapped[str] = mapped_column(String(100))
+    file_size: Mapped[int] = mapped_column(BigInteger)
+    checksum: Mapped[str] = mapped_column(String(64))
+    created_by: Mapped[UUID] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

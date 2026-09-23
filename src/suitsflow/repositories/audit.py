@@ -24,3 +24,23 @@ class AuditRepository:
             )
         )
         await self.session.flush()
+
+    async def record_document_event(
+        self,
+        principal: Principal,
+        document_id: UUID,
+        *,
+        action: str,
+        version_number: int | None = None,
+    ) -> None:
+        self.session.add(
+            AuditLog(
+                tenant_id=principal.tenant_id,
+                user_id=principal.user_id,
+                action=action,
+                resource_type="document",
+                resource_id=document_id,
+                details={"version_number": version_number} if version_number is not None else {},
+            )
+        )
+        await self.session.flush()

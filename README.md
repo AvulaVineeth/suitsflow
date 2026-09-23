@@ -1001,3 +1001,43 @@ Downgrading to `0002` removes audit history and should only be done in a disposa
 development database. Audit retrieval and broader read/denial auditing remain future work.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the feature-branch and merge workflow.
+
+### Document and version metadata
+
+Migration `0004` adds tenant-owned `documents` and `document_versions`. Administrators
+can register document records and revision metadata; members and administrators can
+read records in their own tenant. Empty or unknown role sets grant no document access.
+All operations also require active database-backed tenant membership.
+
+| Endpoint | Purpose | Required role |
+| --- | --- | --- |
+| `POST /api/v1/documents` | Register a draft document | `tenant_admin` |
+| `GET /api/v1/documents` | List this tenant's documents | `member` or `tenant_admin` |
+| `GET /api/v1/documents/{id}` | Read document metadata | `member` or `tenant_admin` |
+| `POST /api/v1/documents/{id}/versions` | Register revision metadata | `tenant_admin` |
+| `GET /api/v1/documents/{id}/versions` | List revision metadata | `member` or `tenant_admin` |
+
+Document registration accepts `name` (trimmed, 1–255 characters) and `document_type`
+(`contract`, `policy`, or `other`). Version registration accepts `mime_type`,
+`file_size` (1–104857600 bytes), and `checksum` (64 lowercase SHA-256 hex characters).
+Supported media types are PDF, plain text, and DOCX. These are **caller-declared
+metadata**, not verified file contents. No storage key or upload URL is accepted or
+returned, and documents remain `draft`; file upload, verification, extraction, and
+ready-state transitions are future slices. The version creator is recorded as
+`created_by`, not as a verified uploader.
+
+Tenant and creator IDs come from the authenticated principal. Unknown request fields
+are rejected. A cross-tenant or nonexistent document returns the same 404. List
+endpoints support `limit` (default 50, maximum 100) and `offset` (0–100000).
+Documents sort newest first, with IDs breaking timestamp ties; versions sort by number.
+
+Version numbers are assigned by the server while holding the document row lock.
+Database uniqueness and composite foreign keys protect revision numbering and
+same-tenant document/creator relationships. Metadata and its audit record commit
+together; failed auditing rolls both back. Each accepted registration is a new
+revision, even if its checksum matches a prior revision. Requests are not yet
+idempotent, so retrying a successful registration creates another record.
+There are no document deletion or version-edit endpoints. Restrictive foreign keys
+preserve referenced records. Audit events record identifiers and version numbers,
+not document names, contents, or hashes. Downgrading to `0003` removes document and
+version metadata while retaining the earlier tenant and audit tables.

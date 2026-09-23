@@ -26,3 +26,9 @@ class ResourceNotFound(Exception):
 def require_tenant_read(principal: Principal) -> None:
     if "tenant_admin" not in principal.roles:
         raise AccessDenied
+
+
+def require_document_access(principal: Principal, *, write: bool = False) -> None:
+    allowed = {"tenant_admin"} if write else {"tenant_admin", "member"}
+    if not principal.roles.intersection(allowed):
+        raise AccessDenied
