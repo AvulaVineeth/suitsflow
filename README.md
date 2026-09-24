@@ -1020,10 +1020,10 @@ All operations also require active database-backed tenant membership.
 Document registration accepts `name` (trimmed, 1–255 characters) and `document_type`
 (`contract`, `policy`, or `other`). Version registration accepts `mime_type`,
 `file_size` (1–104857600 bytes), and `checksum` (64 lowercase SHA-256 hex characters).
-Supported media types are PDF, plain text, and DOCX. These are **caller-declared
-metadata**, not verified file contents. No storage key or upload URL is accepted or
-returned, and documents remain `draft`; file upload, verification, extraction, and
-ready-state transitions are future slices. The version creator is recorded as
+Supported media types are PDF, plain text, and DOCX. At registration these are
+**caller-declared metadata**, not verified file contents. No storage key or upload
+URL is accepted or returned. Documents remain `draft`; extraction and ready-state
+transitions are future slices. The version creator is recorded as
 `created_by`, not as a verified uploader.
 
 Tenant and creator IDs come from the authenticated principal. Unknown request fields
@@ -1041,3 +1041,68 @@ There are no document deletion or version-edit endpoints. Restrictive foreign ke
 preserve referenced records. Audit events record identifiers and version numbers,
 not document names, contents, or hashes. Downgrading to `0003` removes document and
 version metadata while retaining the earlier tenant and audit tables.
+
+### Verified file uploads to S3
+
+Migration `0005` adds a nullable storage reference to each revision. Existing
+revisions keep `uploaded_at: null` until their bytes have been accepted. Run
+`alembic upgrade head` before starting the updated API.
+
+`PUT /api/v1/documents/{document_id}/versions/{version_id}/content` accepts the raw
+file body (not multipart) from a tenant administrator. Send the exact registered
+`Content-Type` and the usual bearer token. The server checks tenant scope before
+reading the stream, then verifies the exact byte count and SHA-256. The registered
+size limits streaming to at most 100 MiB; the body has a configurable 120-second
+receive timeout and spools to temporary disk after 2 MiB. Temporary data is closed
+on success or failure. Provision sufficient temporary space and ingress concurrency
+limits when deploying; this is an API-proxied upload, not a presigned direct upload.
+
+Basic format checks require a PDF signature, valid UTF-8 text without NULs, or a
+readable DOCX ZIP containing its core entries. DOCX checks cap entries at 2,000 and
+total uncompressed size at 200 MiB. These checks do not establish full document
+validity or scan for malware. Uploads do not mark documents ready for processing.
+
+To enable storage for a local API process, configure an existing **private** bucket:
+
+```dotenv
+SUITSFLOW_S3_BUCKET=<private bucket name>
+SUITSFLOW_S3_REGION=us-east-1
+SUITSFLOW_UPLOAD_TIMEOUT_SECONDS=120
+```
+
+Credentials use the standard AWS SDK chain (for example, a local AWS profile or a
+deployed workload role); never commit credentials. The application does not create
+buckets, enable public access, or change bucket policies. Configure S3 Block Public
+Access and bucket encryption; the application honors bucket default encryption.
+The runtime needs `s3:PutObject` on the dedicated object prefix, plus any permissions
+required by the bucket's KMS configuration. No cloud account has been provisioned
+by this change. Storage is disabled when `SUITSFLOW_S3_BUCKET` is unset and returns
+503. The Compose API does not forward these settings or host AWS credentials;
+use the local API process for this development flow.
+
+The server chooses a unique tenant/document/revision/attempt key, sends S3 the
+SHA-256 checksum, and uses a conditional write to avoid replacing an existing
+object. It records the returned S3 version ID when available. S3 bucket versioning
+is optional and independent from application revision numbering. Neither bucket
+names nor object keys appear in API responses.
+
+After validation, a revision row lock serializes concurrent uploads. Membership is
+checked again after the request body arrives. A successful upload returns 200 with
+`uploaded_at`; repeating the same valid upload returns the existing result without
+another S3 write or audit event. A different body returns 422. Missing or foreign
+revisions return 404, receive timeouts 408, and storage failures 503. Registration
+of a new revision remains a separate, non-idempotent POST operation.
+
+The storage reference and `document.version_uploaded` audit event commit together.
+S3 and PostgreSQL cannot share that transaction: a database failure, interrupted
+process, or uncertain S3 response can leave a private unreferenced object. The API
+does not delete objects on failure because a lost commit acknowledgement may mean
+the reference actually committed. Retry the same PUT to recover. Reconciliation
+and orphan cleanup are future operational work; do not apply blanket expiration
+to this prefix because it also contains referenced documents. Downgrading to `0004`
+removes references but does not delete S3 objects.
+
+Tests use real disposable PostgreSQL plus an in-memory object store, and AWS SDK
+stubs verify S3 request parameters and error handling. They do not contact AWS.
+Authenticated downloads, malware scanning, and a live private-bucket smoke test
+remain next steps before production use.

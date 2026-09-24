@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     development_auth_token: SecretStr | None = None
     development_user_id: UUID | None = None
     development_tenant_id: UUID | None = None
+    s3_bucket: str | None = Field(default=None, min_length=3, max_length=63)
+    s3_region: str = "us-east-1"
+    upload_timeout_seconds: float = Field(default=120, gt=0, le=600)
 
     @model_validator(mode="after")
     def validate_development_auth(self) -> "Settings":

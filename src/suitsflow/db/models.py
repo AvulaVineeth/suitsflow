@@ -147,6 +147,13 @@ class DocumentVersion(Base):
             ["tenant_id", "created_by"], ["users.tenant_id", "users.id"], ondelete="RESTRICT"
         ),
         CheckConstraint("version_number > 0", name="positive_number"),
+        CheckConstraint(
+            "(storage_bucket IS NULL AND storage_key IS NULL AND storage_version_id IS NULL "
+            "AND uploaded_at IS NULL) OR (storage_bucket IS NOT NULL AND "
+            "length(storage_bucket) > 0 AND storage_key IS NOT NULL AND "
+            "length(storage_key) > 0 AND uploaded_at IS NOT NULL)",
+            name="complete_storage_reference",
+        ),
         CheckConstraint("file_size > 0 AND file_size <= 104857600", name="valid_file_size"),
         CheckConstraint("checksum ~ '^[0-9a-f]{64}$'", name="valid_checksum"),
         CheckConstraint(
@@ -163,5 +170,9 @@ class DocumentVersion(Base):
     mime_type: Mapped[str] = mapped_column(String(100))
     file_size: Mapped[int] = mapped_column(BigInteger)
     checksum: Mapped[str] = mapped_column(String(64))
+    storage_bucket: Mapped[str | None] = mapped_column(String(63))
+    storage_key: Mapped[str | None] = mapped_column(String(512))
+    storage_version_id: Mapped[str | None] = mapped_column(String(1024))
+    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[UUID] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -46,5 +46,6 @@ class VersionResponse(BaseModel):
     mime_type: MimeType
     file_size: int
     checksum: str
+    uploaded_at: datetime | None
     created_by: UUID
     created_at: datetime

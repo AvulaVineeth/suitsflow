@@ -11,6 +11,18 @@ class DocumentRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def version(
+        self, tenant_id: UUID, document_id: UUID, version_id: UUID, *, lock: bool = False
+    ) -> DocumentVersion | None:
+        query = select(DocumentVersion).where(
+            DocumentVersion.tenant_id == tenant_id,
+            DocumentVersion.document_id == document_id,
+            DocumentVersion.id == version_id,
+        )
+        if lock:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        return (await self.session.scalars(query)).one_or_none()
+
     async def get(
         self, tenant_id: UUID, document_id: UUID, *, lock: bool = False
     ) -> Document | None:

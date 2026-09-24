@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from suitsflow.api.dependencies import get_principal
@@ -20,6 +20,9 @@ from suitsflow.schemas.document import (
     VersionResponse,
 )
 from suitsflow.services.documents import DocumentService
+from suitsflow.services.storage import ObjectStorage, S3Storage, StorageUnavailable
+from suitsflow.services.upload_validation import InvalidUpload
+from suitsflow.services.uploads import UploadService
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -49,6 +52,43 @@ Writer = Annotated[Principal, Depends(get_writer)]
 Service = Annotated[DocumentService, Depends(get_service)]
 Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0, le=100000)]
+
+
+def get_storage(request: Request) -> ObjectStorage:
+    settings = request.app.state.settings
+    if settings.s3_bucket is None:
+        raise HTTPException(status_code=503, detail="Document storage is not configured")
+    return S3Storage(settings.s3_bucket, settings.s3_region)
+
+
+@router.put("/{document_id}/versions/{version_id}/content", response_model=VersionResponse)
+async def upload_content(
+    document_id: UUID,
+    version_id: UUID,
+    request: Request,
+    principal: Writer,
+    service: Service,
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
+) -> VersionResponse:
+    try:
+        return await UploadService(service.repository, storage).upload(
+            principal,
+            document_id,
+            version_id,
+            request.stream(),
+            request.headers.get("content-type", ""),
+            request.app.state.settings.upload_timeout_seconds,
+        )
+    except ResourceNotFound as exc:
+        raise HTTPException(status_code=404, detail="Document version not found") from exc
+    except AccessDenied as exc:
+        raise HTTPException(status_code=403, detail="Forbidden") from exc
+    except InvalidUpload as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=408, detail="Upload timed out") from exc
+    except StorageUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Document storage unavailable") from exc
 
 
 @router.post("", response_model=DocumentResponse, status_code=201)
