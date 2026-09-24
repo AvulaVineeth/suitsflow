@@ -25,6 +25,7 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       SUITSFLOW_TEST_DATABASE_URL: postgresql+asyncpg://suitsflow:suitsflow@localhost:5432/suitsflow_test
+      SUITSFLOW_TEST_CLAMAV_PORT: "3311"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,4 +42,9 @@ jobs:
       - name: Type check
         run: uv run --no-sync mypy src
       - name: Test
-        run: uv run --no-sync pytest
+        run: |
+          docker compose -p suitsflow-scanner-test -f docker-compose.scanner-test.yml up -d --wait --wait-timeout 60 clamav-test
+          uv run --no-sync pytest
+      - name: Stop test scanner
+        if: always()
+        run: docker compose -p suitsflow-scanner-test -f docker-compose.scanner-test.yml stop clamav-test

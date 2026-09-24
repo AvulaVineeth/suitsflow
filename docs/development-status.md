@@ -17,14 +17,17 @@ Updated September 24, 2026 during the overnight development session.
 The scan slice was developed on `feat/document-scan-lifecycle`. Check Git history
 and CI for the current merge and validation status.
 Tests use disposable PostgreSQL, fake storage/scanner adapters, and socket mocks.
-No live AWS integration or antivirus daemon has been provisioned or tested.
+A real local ClamAV test daemon now verifies harmless custom signatures and
+wire behavior; a production daemon with maintained signatures remains unverified.
+No live AWS integration has been provisioned or tested. Real-engine tests exposed
+an archive-limit edge case; application preflight now rejects over-limit ZIP entries.
 Authentication remains the opt-in development token, not production identity.
 Scanning is synchronous and holds the revision row lock during external I/O.
 Clean is a scanner verdict, not a promise of harmless content or processing readiness.
 
 ## Next coherent slices
 
-1. Make local scanning reproducible and verify a real daemon with harmless test fixtures.
+1. Local real-engine scanning tests are implemented; verify exact-commit CI and merge status.
 2. Add durable background processing and retry/claim handling for scanning and extraction.
 3. Extract bounded text from cleared documents, preserving exact revision provenance.
 4. Add reconciliation for private storage objects orphaned by interrupted writes.

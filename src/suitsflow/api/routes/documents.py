@@ -80,7 +80,11 @@ def get_scanner(request: Request) -> Scanner:
     if settings.clamav_host is None:
         raise HTTPException(status_code=503, detail="Document scanner is not configured")
     return ClamAVScanner(
-        settings.clamav_host, settings.clamav_port, settings.clamav_timeout_seconds
+        settings.clamav_host,
+        settings.clamav_port,
+        settings.clamav_timeout_seconds,
+        max_file_bytes=settings.clamav_max_file_bytes,
+        max_scan_bytes=settings.clamav_max_scan_bytes,
     )
 
 

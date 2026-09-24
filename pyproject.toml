@@ -35,7 +35,10 @@ packages = ["src/suitsflow"]
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers --cov=suitsflow --cov-report=term-missing"
 testpaths = ["tests"]
-markers = ["integration: requires a dedicated PostgreSQL test database"]
+markers = [
+  "integration: requires a dedicated PostgreSQL test database",
+  "scanner: requires the dedicated local ClamAV test container",
+]
 
 [tool.coverage.run]
 branch = true

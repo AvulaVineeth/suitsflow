@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     clamav_host: str | None = Field(default=None, min_length=1)
     clamav_port: int = Field(default=3310, ge=1, le=65535)
     clamav_timeout_seconds: float = Field(default=120, gt=0, le=300)
+    clamav_max_file_bytes: int = Field(default=104857600, gt=0, le=104857600)
+    clamav_max_scan_bytes: int = Field(default=314572800, gt=0, le=314572800)
 
     @model_validator(mode="after")
     def validate_development_auth(self) -> "Settings":

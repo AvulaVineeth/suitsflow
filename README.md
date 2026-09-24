@@ -1189,7 +1189,44 @@ ClamAV TCP has no built-in authentication or encryption: never expose it publicl
 The operator must keep signature updates healthy, enable alerts for exceeded scan
 limits and encrypted content, and configure `StreamMaxLength`/`MaxFileSize` for at
 least the API's 100 MiB limit and suitable archive scan limits. These settings are
-critical because a skipped scan must not be treated as a clean result. This change
-does not provision a daemon or claim its configuration has been verified. Tests
-exercise the protocol with socket mocks and the full lifecycle with PostgreSQL
-and fake storage/scanner adapters; no live AWS or antivirus service is contacted.
+critical because a skipped scan must not be treated as a clean result. The production daemon and signature freshness remain deployment responsibilities.
+Tests exercise the full lifecycle with PostgreSQL and fake storage/scanner adapters;
+the optional local real-engine suite below verifies the protocol separately.
+
+
+### Local real-engine scanner tests
+
+The dedicated Compose file starts ClamAV 1.4.6 from an image pinned by digest. It
+loads only harmless custom signatures from `tests/fixtures/clamav/database`, not a
+production virus database. The daemon runs unprivileged with a read-only filesystem,
+bounded memory, no signature updater, and a port published only on loopback. Pulling
+the image requires Docker Hub access; running these tests does not use AWS.
+This test daemon is **not a production malware scanner** and must not be selected
+as the scanner for real documents.
+
+```powershell
+docker compose -p suitsflow-scanner-test -f docker-compose.scanner-test.yml up -d --wait --wait-timeout 60 clamav-test
+$env:SUITSFLOW_TEST_CLAMAV_PORT = "3311"
+uv run pytest tests/integration/test_clamav.py
+Remove-Item Env:SUITSFLOW_TEST_CLAMAV_PORT
+docker compose -p suitsflow-scanner-test -f docker-compose.scanner-test.yml down
+```
+
+CI runs this suite alongside the database tests. Local tests skip it when the
+explicit test port is unset. The checks cover ordinary content, custom signature
+detection, scanning inside ZIPs, stream-limit failures, and application-side
+archive limits. No real malware fixture is stored or downloaded.
+
+Real-engine verification found that an oversized compressed ZIP member could
+receive an OK result despite `AlertExceedsMax`. The application therefore rejects
+files above `SUITSFLOW_CLAMAV_MAX_FILE_BYTES` and ZIPs whose direct members exceed
+that limit, whose direct expanded size plus archive size exceeds
+`SUITSFLOW_CLAMAV_MAX_SCAN_BYTES`, or which contain more than 2,000 entries before
+sending them to the scanner. Defaults are 100 MiB and 300 MiB respectively; set
+these **no higher than the daemon's corresponding limits**. Policy violations
+produce `rejected`, keeping the revision quarantined. These checks cover the outer
+ZIP directory, not every nested archive or embedded format; a clean engine result
+still does not establish complete analysis of all possible embedded content.
+For production, validate parser/scan limits and signature freshness against the
+accepted document types and keep the daemon patched. Do not rely on a single
+clean verdict as proof that a document is harmless.

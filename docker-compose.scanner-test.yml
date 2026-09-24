@@ -1,0 +1,21 @@
+services:
+  clamav-test:
+    image: clamav/clamav:1.4_base@sha256:76cff2172141d860ad6485c86dc6d9bdc4a6b6e1128ed9d86aea5434ae55bf5f
+    entrypoint: [clamd, --foreground=true, --config-file=/etc/clamav-test/clamd.conf]
+    user: clamav
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    ports:
+      - "127.0.0.1:3311:3310"
+    volumes:
+      - ./tests/fixtures/clamav:/etc/clamav-test:ro
+    healthcheck:
+      test: [CMD, clamdscan, --config-file=/etc/clamav-test/clamd.conf, --ping=1]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
