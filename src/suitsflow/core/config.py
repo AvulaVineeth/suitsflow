@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     s3_profile: str | None = Field(default=None, min_length=1)
     s3_expected_bucket_owner: str | None = Field(default=None, pattern=r"^[0-9]{12}$")
     upload_timeout_seconds: float = Field(default=120, gt=0, le=600)
+    clamav_host: str | None = Field(default=None, min_length=1)
+    clamav_port: int = Field(default=3310, ge=1, le=65535)
+    clamav_timeout_seconds: float = Field(default=120, gt=0, le=300)
 
     @model_validator(mode="after")
     def validate_development_auth(self) -> "Settings":

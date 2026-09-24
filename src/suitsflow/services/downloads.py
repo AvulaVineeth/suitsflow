@@ -14,6 +14,10 @@ class ContentNotUploaded(Exception):
     pass
 
 
+class ContentNotCleared(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class Download:
     body: BinaryIO
@@ -37,6 +41,8 @@ class DownloadService:
             or version.storage_key is None
         ):
             raise ContentNotUploaded
+        if version.content_status != "clean":
+            raise ContentNotCleared
         reference = StoredObject(
             version.storage_bucket, version.storage_key, version.storage_version_id
         )

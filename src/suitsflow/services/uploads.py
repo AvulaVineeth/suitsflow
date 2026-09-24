@@ -89,6 +89,7 @@ class UploadService:
                 version.storage_key = stored.key
                 version.storage_version_id = stored.version_id
                 version.uploaded_at = datetime.now(UTC)
+                version.content_status = "pending_scan"
                 await session.flush()
                 await AuditRepository(session).record_document_event(
                     principal,

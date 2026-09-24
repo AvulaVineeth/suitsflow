@@ -47,5 +47,7 @@ class VersionResponse(BaseModel):
     file_size: int
     checksum: str
     uploaded_at: datetime | None
+    content_status: Literal["pending_upload", "pending_scan", "clean", "rejected", "scan_failed"]
+    scanned_at: datetime | None
     created_by: UUID
     created_at: datetime

@@ -10,13 +10,27 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from suitsflow.api.routes.documents import get_storage
+from suitsflow.api.routes.documents import get_scanner, get_storage
 from suitsflow.core.config import Settings
 from suitsflow.db.models import AuditLog, DocumentVersion, Role, User, UserRole
 from suitsflow.db.session import Database
 from suitsflow.main import create_app
 from suitsflow.repositories.audit import AuditRepository
+from suitsflow.services.scanner import ScannerUnavailable
 from suitsflow.services.storage import StorageUnavailable, StoredObject
+
+
+class TestScanner:
+    def __init__(self):
+        self.verdict = "clean"
+        self.calls = 0
+
+    def scan(self, body):
+        self.calls += 1
+        assert body.read()
+        if self.verdict == "error":
+            raise ScannerUnavailable
+        return self.verdict
 
 
 class MemoryStorage:
@@ -51,6 +65,8 @@ def exercise_uploads(settings: Settings, other_tenant: UUID, headers: dict[str, 
     storage = MemoryStorage()
     app = create_app(settings)
     app.dependency_overrides[get_storage] = lambda: storage
+    scanner = TestScanner()
+    app.dependency_overrides[get_scanner] = lambda: scanner
     content = b"Example agreement\n"
     metadata = {
         "mime_type": "text/plain",
@@ -104,6 +120,15 @@ def exercise_uploads(settings: Settings, other_tenant: UUID, headers: dict[str, 
         assert results[0]["uploaded_at"] is not None
         assert len(storage.objects) == 1
         assert "storage_key" not in results[0]
+        assert client.get(url, headers=headers).status_code == 409
+        scan_url = url.removesuffix("content") + "scan"
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            scan_responses = list(
+                pool.map(lambda _: client.post(scan_url, headers=headers), range(2))
+            )
+        assert all(response.status_code == 200 for response in scan_responses)
+        assert scan_responses[0].json()["content_status"] == "clean"
+        assert scanner.calls == 1
         downloaded = client.get(url, headers=headers)
         assert downloaded.status_code == 200
         assert downloaded.content == content
@@ -174,7 +199,9 @@ def exercise_uploads(settings: Settings, other_tenant: UUID, headers: dict[str, 
                 )
             )
             scoped_app.dependency_overrides[get_storage] = lambda: storage
+            scoped_app.dependency_overrides[get_scanner] = lambda: scanner
             with TestClient(scoped_app) as scoped:
+                assert scoped.post(scan_url, headers=headers).status_code == status
                 download = scoped.get(url, headers=headers)
                 assert download.status_code == (200 if user_id == member_id else 404)
                 if user_id == member_id:
@@ -198,6 +225,34 @@ def exercise_uploads(settings: Settings, other_tenant: UUID, headers: dict[str, 
         assert len(storage.objects) == 2  # Private orphan retained on uncertain DB failures.
         assert client.put(failed_url, content=content, headers=upload_headers).status_code == 200
         assert len(storage.objects) == 3
+        retry_scan_url = failed_url.removesuffix("content") + "scan"
+        scanner.verdict = "error"
+        assert (
+            client.post(retry_scan_url, headers=headers).json()["content_status"] == "scan_failed"
+        )
+        assert client.get(failed_url, headers=headers).status_code == 409
+        scanner.verdict = "rejected"
+        assert client.post(retry_scan_url, headers=headers).json()["content_status"] == "rejected"
+        scanner.verdict = "clean"
+        assert client.post(retry_scan_url, headers=headers).json()["content_status"] == "rejected"
+        assert client.get(failed_url, headers=headers).status_code == 409
+        _, pending_url = register()
+        pending_scan = pending_url.removesuffix("content") + "scan"
+        assert client.post(pending_scan, headers=headers).status_code == 409
+        assert client.put(pending_url, content=content, headers=upload_headers).status_code == 200
+        with (
+            patch.object(
+                AuditRepository,
+                "record_document_event",
+                AsyncMock(side_effect=RuntimeError("scan audit failure")),
+            ),
+            pytest.raises(RuntimeError, match="scan audit failure"),
+        ):
+            client.post(pending_scan, headers=headers)
+        assert client.get(pending_url, headers=headers).status_code == 409
+        assert client.post(pending_scan, headers=headers).json()["content_status"] == "clean"
+        app.dependency_overrides.pop(get_scanner)
+        assert client.post(pending_scan, headers=headers).status_code == 503
 
     with TestClient(create_app(settings)) as unconfigured:
         assert unconfigured.put(url, content=content, headers=upload_headers).status_code == 503

@@ -148,6 +148,14 @@ class DocumentVersion(Base):
         ),
         CheckConstraint("version_number > 0", name="positive_number"),
         CheckConstraint(
+            "(content_status = 'pending_upload' AND uploaded_at IS NULL AND scanned_at IS NULL) "
+            "OR (content_status = 'pending_scan' AND uploaded_at IS NOT NULL "
+            "AND scanned_at IS NULL) "
+            "OR (content_status IN ('clean', 'rejected', 'scan_failed') "
+            "AND uploaded_at IS NOT NULL AND scanned_at IS NOT NULL)",
+            name="valid_content_status",
+        ),
+        CheckConstraint(
             "(storage_bucket IS NULL AND storage_key IS NULL AND storage_version_id IS NULL "
             "AND uploaded_at IS NULL) OR (storage_bucket IS NOT NULL AND "
             "length(storage_bucket) > 0 AND storage_key IS NOT NULL AND "
@@ -174,5 +182,7 @@ class DocumentVersion(Base):
     storage_key: Mapped[str | None] = mapped_column(String(512))
     storage_version_id: Mapped[str | None] = mapped_column(String(1024))
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    content_status: Mapped[str] = mapped_column(String(32), server_default="pending_upload")
+    scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[UUID] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

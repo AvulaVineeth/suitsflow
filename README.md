@@ -1113,8 +1113,8 @@ removes references but does not delete S3 objects.
 
 Tests use real disposable PostgreSQL plus an in-memory object store, and AWS SDK
 stubs verify S3 request parameters and error handling. They do not contact AWS.
-Malware scanning and a live private-bucket smoke test remain next steps before
-production use. Live AWS testing is deferred until the personal profile and bucket
+A deployed scanner with current signatures and a live private-bucket smoke test
+remain required before production use. Live AWS testing is deferred until the personal profile and bucket
 are explicitly configured and confirmed. Tests isolate AWS configuration files,
 clear credential environment variables, and reject unstubbed AWS HTTP requests.
 
@@ -1138,8 +1138,8 @@ local temporary disk and bandwidth; configure ingress concurrency limits.
 
 Responses use `application/octet-stream`, `Content-Disposition: attachment`,
 `X-Content-Type-Options: nosniff`, and `Cache-Control: no-store`. Filenames use the
-document UUID and revision number. Files have not yet been malware scanned;
-attachment delivery does not establish that they are safe to open. There are no
+document UUID and revision number. Only revisions with a committed clean scan can be downloaded. A clean verdict
+is not a guarantee that a file is safe to open. There are no
 public/presigned URLs, range responses, or download audit events in this slice.
 Access is checked at request admission; it does not cancel an in-flight transfer
 when membership is revoked later.
@@ -1148,3 +1148,48 @@ The personal runtime role will also need `s3:GetObject` for unversioned reads an
 `s3:GetObjectVersion` for stored version IDs, plus applicable KMS decrypt permission.
 See the [AWS GetObject reference](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html)
 for version and expected-owner behavior. No additional database migration is needed.
+
+
+### Quarantine and malware-scan lifecycle
+
+Migration `0006` adds `content_status` and `scanned_at` to version metadata.
+Existing uploads become `pending_scan` and can no longer be downloaded until
+scanned. New registrations start as `pending_upload`; a verified upload transitions
+to `pending_scan`. Database checks require timestamps and upload references to agree
+with the state. Apply the migration before deploying this API version. Downgrading
+removes scan state and restores the older API's lack of scan gating; do not use
+that as a way to release quarantined files.
+
+`POST /api/v1/documents/{document_id}/versions/{version_id}/scan` requires an active
+tenant administrator. It reads and integrity-verifies the recorded object, streams
+those bytes to the configured scanner, and records `clean`, `rejected`, or
+`scan_failed` with a timestamp and an audit event. A successful request returns 200
+with the resulting metadata, including `scan_failed` when storage or scanning was
+unavailable. Check `content_status`, not just the HTTP status. A missing upload
+returns 409; foreign or missing versions return 404. Members cannot request scans
+or set verdicts. Download returns 409 for every state except `clean`.
+
+Retries of `scan_failed` run a new scan. Repeating a terminal `clean` or `rejected`
+result is idempotent and adds no audit event. Submit a new revision for a replacement
+file; there is no manual override or rescan of terminal verdicts in this slice.
+Row locking serializes scans, and an audit failure rolls back the verdict. This
+initial scan endpoint is synchronous and holds the revision lock during bounded
+storage and scanner I/O. It does not schedule automatic background scans yet.
+A crash leaves the prior pending/failed state and can be retried.
+
+The adapter uses ClamAV's [INSTREAM protocol](https://docs.clamav.net/manual/Usage/ClamdProtocol.html).
+It sends bytes, never local filenames, and fails closed on timeouts, malformed
+responses, limit errors, or disconnected sockets. The scanner is disabled by
+default: set `SUITSFLOW_CLAMAV_HOST`, optionally `SUITSFLOW_CLAMAV_PORT` (3310), and
+`SUITSFLOW_CLAMAV_TIMEOUT_SECONDS` (120) for a trusted private daemon. Missing
+configuration returns 503 without approving content. Raw scanner output and
+signature names are not exposed in API responses or audit logs.
+
+ClamAV TCP has no built-in authentication or encryption: never expose it publicly.
+The operator must keep signature updates healthy, enable alerts for exceeded scan
+limits and encrypted content, and configure `StreamMaxLength`/`MaxFileSize` for at
+least the API's 100 MiB limit and suitable archive scan limits. These settings are
+critical because a skipped scan must not be treated as a clean result. This change
+does not provision a daemon or claim its configuration has been verified. Tests
+exercise the protocol with socket mocks and the full lifecycle with PostgreSQL
+and fake storage/scanner adapters; no live AWS or antivirus service is contacted.

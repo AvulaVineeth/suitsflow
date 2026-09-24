@@ -22,7 +22,7 @@ from tests.integration.membership_checks import (
 from tests.integration.upload_checks import exercise_uploads
 
 from suitsflow.core.config import Settings, get_settings
-from suitsflow.db.models import Tenant
+from suitsflow.db.models import DocumentVersion, Tenant
 from suitsflow.db.session import Database
 from suitsflow.main import create_app
 from suitsflow.repositories.tenants import TenantRepository
@@ -172,6 +172,25 @@ def test_postgresql_migrations_sessions_and_readiness(
             assert response.status_code == 503
             assert response.json() == {"detail": "Database unavailable"}
             assert client.get("/api/v1/health").status_code == 200
+        # Upgrading a database with existing stored files must quarantine every upload.
+        command.downgrade(config, "0005")
+        command.upgrade(config, "head")
+
+        async def verify_existing_uploads_are_quarantined() -> None:
+            db = Database(settings)
+            try:
+                async with db.sessions() as session:
+                    versions = (await session.scalars(select(DocumentVersion))).all()
+                    assert any(version.uploaded_at is not None for version in versions)
+                    for version in versions:
+                        assert version.scanned_at is None
+                        assert version.content_status == (
+                            "pending_scan" if version.uploaded_at is not None else "pending_upload"
+                        )
+            finally:
+                await db.dispose()
+
+        asyncio.run(verify_existing_uploads_are_quarantined())
         command.downgrade(config, "0001")
         assert sorted(asyncio.run(tables())) == ["alembic_version", "tenants"]
         command.upgrade(config, "head")

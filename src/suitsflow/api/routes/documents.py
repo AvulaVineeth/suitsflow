@@ -22,7 +22,9 @@ from suitsflow.schemas.document import (
     VersionResponse,
 )
 from suitsflow.services.documents import DocumentService
-from suitsflow.services.downloads import ContentNotUploaded, DownloadService
+from suitsflow.services.downloads import ContentNotCleared, ContentNotUploaded, DownloadService
+from suitsflow.services.scanner import ClamAVScanner, Scanner
+from suitsflow.services.scans import ScanService
 from suitsflow.services.storage import ObjectStorage, S3Storage, StorageUnavailable
 from suitsflow.services.upload_validation import InvalidUpload
 from suitsflow.services.uploads import UploadService
@@ -71,6 +73,40 @@ def get_storage(request: Request) -> ObjectStorage:
         settings.s3_expected_bucket_owner,
         settings.s3_profile,
     )
+
+
+def get_scanner(request: Request) -> Scanner:
+    settings = request.app.state.settings
+    if settings.clamav_host is None:
+        raise HTTPException(status_code=503, detail="Document scanner is not configured")
+    return ClamAVScanner(
+        settings.clamav_host, settings.clamav_port, settings.clamav_timeout_seconds
+    )
+
+
+@router.post("/{document_id}/versions/{version_id}/scan", response_model=VersionResponse)
+async def scan_content(
+    document_id: UUID,
+    version_id: UUID,
+    principal: Writer,
+    service: Service,
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
+    scanner: Annotated[Scanner, Depends(get_scanner)],
+) -> VersionResponse:
+    try:
+        return await ScanService(service.repository, storage, scanner).scan(
+            principal, document_id, version_id
+        )
+    except ResourceNotFound as exc:
+        raise HTTPException(status_code=404, detail="Document version not found") from exc
+    except ContentNotCleared as exc:
+        raise HTTPException(
+            status_code=409, detail="Document content has not passed scanning"
+        ) from exc
+    except ContentNotUploaded as exc:
+        raise HTTPException(
+            status_code=409, detail="Document version has no uploaded content"
+        ) from exc
 
 
 @router.put("/{document_id}/versions/{version_id}/content", response_model=VersionResponse)
@@ -122,6 +158,10 @@ async def download_content(
         return DownloadResponse(download)
     except ResourceNotFound as exc:
         raise HTTPException(status_code=404, detail="Document version not found") from exc
+    except ContentNotCleared as exc:
+        raise HTTPException(
+            status_code=409, detail="Document content has not passed scanning"
+        ) from exc
     except ContentNotUploaded as exc:
         raise HTTPException(
             status_code=409, detail="Document version has no uploaded content"

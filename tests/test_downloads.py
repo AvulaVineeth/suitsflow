@@ -104,6 +104,7 @@ def test_failed_storage_read_closes_temporary_file() -> None:
 
     version = SimpleNamespace(
         uploaded_at=True,
+        content_status="clean",
         storage_bucket="private-test",
         storage_key="key",
         storage_version_id="version",
