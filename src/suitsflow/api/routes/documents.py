@@ -21,8 +21,10 @@ from suitsflow.schemas.document import (
     VersionCreate,
     VersionResponse,
 )
+from suitsflow.schemas.scan_job import ScanJobResponse
 from suitsflow.services.documents import DocumentService
 from suitsflow.services.downloads import ContentNotCleared, ContentNotUploaded, DownloadService
+from suitsflow.services.scan_jobs import ScanJobs
 from suitsflow.services.scanner import ClamAVScanner, Scanner
 from suitsflow.services.scans import ScanService
 from suitsflow.services.storage import ObjectStorage, S3Storage, StorageUnavailable
@@ -30,6 +32,42 @@ from suitsflow.services.upload_validation import InvalidUpload
 from suitsflow.services.uploads import UploadService
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+@router.post(
+    "/{document_id}/versions/{version_id}/scan-job", response_model=ScanJobResponse, status_code=202
+)
+async def enqueue_scan(
+    document_id: UUID,
+    version_id: UUID,
+    principal: Annotated[Principal, Depends(get_principal)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ScanJobResponse:
+    try:
+        return await ScanJobs(session).enqueue(principal, document_id, version_id)
+    except AccessDenied as exc:
+        raise HTTPException(status_code=403, detail="Forbidden") from exc
+    except ResourceNotFound as exc:
+        raise HTTPException(status_code=404, detail="Document version not found") from exc
+    except ContentNotUploaded as exc:
+        raise HTTPException(
+            status_code=409, detail="Document version has no uploaded content"
+        ) from exc
+
+
+@router.get("/{document_id}/versions/{version_id}/scan-job", response_model=ScanJobResponse)
+async def get_scan_job(
+    document_id: UUID,
+    version_id: UUID,
+    principal: Annotated[Principal, Depends(get_principal)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ScanJobResponse:
+    try:
+        return await ScanJobs(session).get(principal, document_id, version_id)
+    except AccessDenied as exc:
+        raise HTTPException(status_code=403, detail="Forbidden") from exc
+    except ResourceNotFound as exc:
+        raise HTTPException(status_code=404, detail="Scan job not found") from exc
 
 
 def get_reader(principal: Annotated[Principal, Depends(get_principal)]) -> Principal:

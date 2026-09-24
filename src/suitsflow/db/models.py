@@ -135,6 +135,7 @@ class Document(Base):
 class DocumentVersion(Base):
     __tablename__ = "document_versions"
     __table_args__ = (
+        UniqueConstraint("tenant_id", "id"),
         UniqueConstraint(
             "tenant_id", "document_id", "version_number", name="uq_document_versions_number"
         ),
@@ -186,3 +187,37 @@ class DocumentVersion(Base):
     scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[UUID] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DocumentScanJob(Base):
+    __tablename__ = "document_scan_jobs"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "version_id"),
+        ForeignKeyConstraint(
+            ["tenant_id", "version_id"],
+            ["document_versions.tenant_id", "document_versions.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "requested_by"], ["users.tenant_id", "users.id"], ondelete="RESTRICT"
+        ),
+        CheckConstraint("attempts >= 0", name="valid_attempts"),
+        CheckConstraint(
+            "(status = 'running' AND claim_token IS NOT NULL AND lease_until IS NOT NULL) OR "
+            "(status IN ('pending', 'completed', 'failed') "
+            "AND claim_token IS NULL AND lease_until IS NULL)",
+            name="valid_claim",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column()
+    version_id: Mapped[UUID] = mapped_column()
+    requested_by: Mapped[UUID] = mapped_column()
+    status: Mapped[str] = mapped_column(String(16), server_default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, server_default="0")
+    claim_token: Mapped[UUID | None] = mapped_column()
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

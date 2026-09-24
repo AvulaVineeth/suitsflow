@@ -1230,3 +1230,31 @@ still does not establish complete analysis of all possible embedded content.
 For production, validate parser/scan limits and signature freshness against the
 accepted document types and keep the daemon patched. Do not rely on a single
 clean verdict as proof that a document is harmless.
+
+
+### Background document scans
+
+After upload, an administrator can `POST /api/v1/documents/{document_id}/versions/{version_id}/scan-job`
+to enqueue scanning (202). Members can GET that same path to read job status. One
+job exists per revision; repeated requests return it, while a failed job can be
+explicitly requeued. Upload does not automatically enqueue yet. The synchronous
+`/scan` endpoint remains available for manual use.
+
+Once a personal storage account and private scanner are configured, run
+`python -m suitsflow.worker --max-jobs 100` to drain up to 100 available jobs and exit.
+The default is one job; a deployment supervisor must invoke the worker repeatedly.
+No worker or live storage is started automatically by the application.
+
+Workers claim jobs in short transactions with a 15-minute lease, then release the
+transaction during storage and scanner I/O. Expired claims can be reclaimed;
+claim tokens prevent stale workers from publishing. Processing is at least once:
+a crash can cause another scan, but verdict, completion, and audit commit together.
+Expected storage/scanner failures mark the job failed and require explicit retry.
+Unexpected failures preserve the lease for recovery. Active administrator membership
+is checked before I/O and again before publishing. Downloads still require clean
+status. A completed job can represent either clean or rejected content; consult
+the revision's content status. Migration 0007 adds jobs without changing verdicts;
+downgrading removes job history.
+
+The queue and worker are tested with local adapters. Personal AWS provisioning and
+production worker supervision remain future deployment steps.
