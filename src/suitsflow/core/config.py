@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     development_tenant_id: UUID | None = None
     s3_bucket: str | None = Field(default=None, min_length=3, max_length=63)
     s3_region: str = "us-east-1"
+    s3_profile: str | None = Field(default=None, min_length=1)
+    s3_expected_bucket_owner: str | None = Field(default=None, pattern=r"^[0-9]{12}$")
     upload_timeout_seconds: float = Field(default=120, gt=0, le=600)
 
     @model_validator(mode="after")

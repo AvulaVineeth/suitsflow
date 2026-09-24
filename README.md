@@ -1066,12 +1066,21 @@ To enable storage for a local API process, configure an existing **private** buc
 
 ```dotenv
 SUITSFLOW_S3_BUCKET=<private bucket name>
+SUITSFLOW_S3_PROFILE=suitsflow-personal
+SUITSFLOW_S3_EXPECTED_BUCKET_OWNER=<personal account ID, 12 digits>
 SUITSFLOW_S3_REGION=us-east-1
 SUITSFLOW_UPLOAD_TIMEOUT_SECONDS=120
 ```
 
-Credentials use the standard AWS SDK chain (for example, a local AWS profile or a
-deployed workload role); never commit credentials. The application does not create
+Local/test storage requires an explicitly selected named profile through
+`SUITSFLOW_S3_PROFILE`; it will not silently select the workstation's default
+profile. Set up a separate personal profile when live integration is needed; do
+not reuse company credentials. Do not paste credentials into chat or commit them.
+`SUITSFLOW_S3_EXPECTED_BUCKET_OWNER` is required in every environment and is sent
+with each S3 read/write to reject a bucket belonging to a different account.
+Deployed workloads may omit the profile to use a workload role. These settings
+select an account; they do not create credentials or modify AWS configuration.
+Missing account configuration returns 503 before creating an AWS client. The application does not create
 buckets, enable public access, or change bucket policies. Configure S3 Block Public
 Access and bucket encryption; the application honors bucket default encryption.
 The runtime needs `s3:PutObject` on the dedicated object prefix, plus any permissions
@@ -1104,5 +1113,38 @@ removes references but does not delete S3 objects.
 
 Tests use real disposable PostgreSQL plus an in-memory object store, and AWS SDK
 stubs verify S3 request parameters and error handling. They do not contact AWS.
-Authenticated downloads, malware scanning, and a live private-bucket smoke test
-remain next steps before production use.
+Malware scanning and a live private-bucket smoke test remain next steps before
+production use. Live AWS testing is deferred until the personal profile and bucket
+are explicitly configured and confirmed. Tests isolate AWS configuration files,
+clear credential environment variables, and reject unstubbed AWS HTTP requests.
+
+
+### Authenticated document downloads
+
+`GET /api/v1/documents/{document_id}/versions/{version_id}/content` permits active
+members and administrators to download an uploaded revision in their own tenant.
+Missing/foreign revisions return 404; a registered revision with no upload returns
+409. Missing objects, denied S3 reads, and integrity failures return a generic 503.
+The endpoint accepts no storage key, bucket, or S3 version from the caller.
+
+The adapter requests the stored S3 version ID when present and verifies the whole
+file's size and SHA-256 before returning any bytes. Unversioned objects are also
+verified, so replacement content cannot silently become a different revision.
+Downloads spool to temporary disk after 2 MiB and release the database connection
+before S3 I/O. A bounded read uses 64 KiB chunks, a 30-second socket timeout, and a
+120-second transfer deadline checked between chunks. The temporary file is closed
+on storage failure, response completion, or client disconnect. Downloads consume
+local temporary disk and bandwidth; configure ingress concurrency limits.
+
+Responses use `application/octet-stream`, `Content-Disposition: attachment`,
+`X-Content-Type-Options: nosniff`, and `Cache-Control: no-store`. Filenames use the
+document UUID and revision number. Files have not yet been malware scanned;
+attachment delivery does not establish that they are safe to open. There are no
+public/presigned URLs, range responses, or download audit events in this slice.
+Access is checked at request admission; it does not cancel an in-flight transfer
+when membership is revoked later.
+
+The personal runtime role will also need `s3:GetObject` for unversioned reads and
+`s3:GetObjectVersion` for stored version IDs, plus applicable KMS decrypt permission.
+See the [AWS GetObject reference](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html)
+for version and expected-owner behavior. No additional database migration is needed.

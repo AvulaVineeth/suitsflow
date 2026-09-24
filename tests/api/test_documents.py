@@ -62,3 +62,9 @@ def test_documents_require_a_recognized_role(roles: frozenset[str]) -> None:
 def test_documents_require_authentication() -> None:
     with TestClient(create_app(Settings(_env_file=None, environment="test"))) as client:
         assert client.get("/api/v1/documents").status_code == 401
+        assert (
+            client.get(f"/api/v1/documents/{uuid4()}/versions/{uuid4()}/content").status_code == 401
+        )
+        schema = client.get("/openapi.json").json()
+        download = schema["paths"]["/api/v1/documents/{document_id}/versions/{version_id}/content"]
+        assert "application/octet-stream" in download["get"]["responses"]["200"]["content"]

@@ -2,9 +2,11 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from suitsflow.api.dependencies import get_principal
+from suitsflow.api.download_response import DownloadResponse
 from suitsflow.core.security import (
     AccessDenied,
     Principal,
@@ -20,6 +22,7 @@ from suitsflow.schemas.document import (
     VersionResponse,
 )
 from suitsflow.services.documents import DocumentService
+from suitsflow.services.downloads import ContentNotUploaded, DownloadService
 from suitsflow.services.storage import ObjectStorage, S3Storage, StorageUnavailable
 from suitsflow.services.upload_validation import InvalidUpload
 from suitsflow.services.uploads import UploadService
@@ -58,7 +61,16 @@ def get_storage(request: Request) -> ObjectStorage:
     settings = request.app.state.settings
     if settings.s3_bucket is None:
         raise HTTPException(status_code=503, detail="Document storage is not configured")
-    return S3Storage(settings.s3_bucket, settings.s3_region)
+    if settings.s3_expected_bucket_owner is None or (
+        settings.environment in {"local", "test"} and settings.s3_profile is None
+    ):
+        raise HTTPException(status_code=503, detail="Document storage account is not configured")
+    return S3Storage(
+        settings.s3_bucket,
+        settings.s3_region,
+        settings.s3_expected_bucket_owner,
+        settings.s3_profile,
+    )
 
 
 @router.put("/{document_id}/versions/{version_id}/content", response_model=VersionResponse)
@@ -87,6 +99,33 @@ async def upload_content(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except TimeoutError as exc:
         raise HTTPException(status_code=408, detail="Upload timed out") from exc
+    except StorageUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Document storage unavailable") from exc
+
+
+@router.get(
+    "/{document_id}/versions/{version_id}/content",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"application/octet-stream": {}}}},
+)
+async def download_content(
+    document_id: UUID,
+    version_id: UUID,
+    principal: Reader,
+    service: Service,
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
+) -> DownloadResponse:
+    try:
+        download = await DownloadService(service.repository, storage).download(
+            principal, document_id, version_id
+        )
+        return DownloadResponse(download)
+    except ResourceNotFound as exc:
+        raise HTTPException(status_code=404, detail="Document version not found") from exc
+    except ContentNotUploaded as exc:
+        raise HTTPException(
+            status_code=409, detail="Document version has no uploaded content"
+        ) from exc
     except StorageUnavailable as exc:
         raise HTTPException(status_code=503, detail="Document storage unavailable") from exc
 

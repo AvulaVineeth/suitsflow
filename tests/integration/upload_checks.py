@@ -24,6 +24,16 @@ class MemoryStorage:
         self.objects: dict[str, bytes] = {}
         self.fail = False
 
+    def download(
+        self, reference: StoredObject, target: BinaryIO, *, size: int, checksum: str
+    ) -> None:
+        if self.fail or reference.key not in self.objects:
+            raise StorageUnavailable
+        assert reference.bucket == "private-test"
+        assert reference.version_id == "s3-version-id"
+        target.write(self.objects[reference.key])
+        target.seek(0)
+
     def put(
         self, key: str, body: BinaryIO, *, size: int, checksum: str, mime_type: str
     ) -> StoredObject:
@@ -64,6 +74,9 @@ def exercise_uploads(settings: Settings, other_tenant: UUID, headers: dict[str, 
             return version_id, f"{endpoint}/{version_id}/content"
 
         version_id, url = register()
+        assert client.get(url).status_code == 401
+        assert client.get(url, headers=headers).status_code == 409
+        assert client.get(url.replace(version_id, str(uuid4())), headers=headers).status_code == 404
         assert client.put(url, content=content).status_code == 401
         for bad in (content[:-1], content + b"extra", b"x" * len(content)):
             assert client.put(url, content=bad, headers=upload_headers).status_code == 422
@@ -91,6 +104,17 @@ def exercise_uploads(settings: Settings, other_tenant: UUID, headers: dict[str, 
         assert results[0]["uploaded_at"] is not None
         assert len(storage.objects) == 1
         assert "storage_key" not in results[0]
+        downloaded = client.get(url, headers=headers)
+        assert downloaded.status_code == 200
+        assert downloaded.content == content
+        assert downloaded.headers["content-type"] == "application/octet-stream"
+        assert downloaded.headers["cache-control"] == "no-store"
+        assert downloaded.headers["x-content-type-options"] == "nosniff"
+        assert downloaded.headers["content-disposition"].startswith("attachment;")
+        assert downloaded.headers["content-length"] == str(len(content))
+        storage.fail = True
+        assert client.get(url, headers=headers).status_code == 503
+        storage.fail = False
 
         async def verify() -> tuple[UUID, UUID]:
             db = Database(settings)
@@ -151,6 +175,10 @@ def exercise_uploads(settings: Settings, other_tenant: UUID, headers: dict[str, 
             )
             scoped_app.dependency_overrides[get_storage] = lambda: storage
             with TestClient(scoped_app) as scoped:
+                download = scoped.get(url, headers=headers)
+                assert download.status_code == (200 if user_id == member_id else 404)
+                if user_id == member_id:
+                    assert download.content == content
                 assert (
                     scoped.put(url, content=content, headers=upload_headers).status_code == status
                 )
