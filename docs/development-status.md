@@ -1,52 +1,35 @@
 # Development handoff
 
-Updated September 24, 2026 during the overnight development session.
+Updated September 26, 2026.
 
-## Implemented
+## Implemented and merged
 
-- PostgreSQL tenant, membership, document, and revision foundations.
-- Tenant-scoped authorization and atomic audit records.
-- Verified S3 upload and download adapters, exercised with mocked AWS responses.
-- Explicit local AWS profile and expected bucket-owner settings; tests block live AWS.
-- Scan lifecycle: pending upload, pending scan, clean, rejected, and scan failed.
-- Administrator scan endpoint with a ClamAV INSTREAM adapter; downloads require clean status.
-- Migration 0006 quarantines previously uploaded files instead of assuming they are clean.
+- Tenant, membership, document and immutable revision foundations with atomic audits.
+- Verified upload/download adapters; live AWS remains unconfigured and untested.
+- Quarantine lifecycle and local ClamAV protocol/engine tests.
+- Durable scan jobs, 15-minute leases, stale-worker fencing, explicit retries and
+  fresh membership checks. Commit `bfbee2b` passed remote CI and is merged into main.
 
-## Validation and limitations
+## Current slice
 
-The scan slice was developed on `feat/document-scan-lifecycle`. Check Git history
-and CI for the current merge and validation status.
-Tests use disposable PostgreSQL, fake storage/scanner adapters, and socket mocks.
-A real local ClamAV test daemon now verifies harmless custom signatures and
-wire behavior; a production daemon with maintained signatures remains unverified.
-No live AWS integration has been provisioned or tested. Real-engine tests exposed
-an archive-limit edge case; application preflight now rejects over-limit ZIP entries.
-Authentication remains the opt-in development token, not production identity.
-Background scan jobs are implemented on `feat/background-document-scans`; 90 local tests and static checks pass; remote CI is pending.
-The optional synchronous endpoint still holds a revision lock during I/O.
-The background worker releases database transactions during external I/O and uses
-15-minute leases with stale-claim fencing. Explicit enqueue and failed-job retry
-are available; automatic upload enqueue and deployment supervision are not yet included.
-Clean is a scanner verdict, not a promise of harmless content or processing readiness.
+`feat/plain-text-extraction` adds on-demand UTF-8 extraction from clean revisions,
+with bounded input/output and exact revision/checksum/extractor provenance.
+All 106 local tests, lint, formatting and type checks pass. Exact-commit remote CI
+must pass before merge.
+A Windows checkout issue in Linux scanner fixture line endings was fixed using
+`.gitattributes`; the local test scanner is healthy again.
 
-## Next coherent slices
+## Next slices and boundaries
 
-1. Real-engine scanner checks passed CI and were merged at `0015538`.
-2. Finish local/remote validation of background scan jobs before merging.
-3. Extract bounded text from cleared documents, preserving exact revision provenance.
-4. Add reconciliation for private storage objects orphaned by interrupted writes.
-5. Add production identity and further product workflows from the architecture contract.
+1. Validate and merge the extraction slice.
+2. Add bounded PDF/DOCX extraction, then persisted extraction artifacts and indexing.
+3. Reconcile private objects orphaned by interrupted uploads.
+4. Add production identity, automatic scan enqueue and worker supervision.
 
-Live AWS work is deferred until the owner explicitly confirms a personal account.
-Do not inspect, restore, or use company credentials. Local/mock work can continue.
-Only merge slices after local quality checks and exact-commit remote CI pass.
+Development authentication is still local/test only. Real scanner signature
+freshness and production deployment remain unverified. Do not inspect, restore,
+or use company AWS credentials. Personal AWS integration requires explicit owner
+confirmation. Local mocks and test services remain the development path.
 
-## Resume checkpoint
-
-Background scan jobs are implemented with migration 0007, queue/status endpoints,
-a bounded worker CLI, lease recovery, current-membership checks, and atomic audits.
-Local lint, format, and type checks pass. All 90 tests pass after fixing
-a timestamp refresh on failed-job requeue. Check the latest commit and CI before
-merging `feat/background-document-scans`; never merge a failing or unverified SHA.
-The next independent product slice is bounded text extraction from clean revisions.
-Weekly usage reached 100% during this checkpoint; no reset credit was redeemed.
+The September 24 overnight session has ended. Subsequent work is explicitly
+requested interactive development; do not resume or recreate that schedule.

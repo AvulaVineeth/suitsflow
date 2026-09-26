@@ -1258,3 +1258,24 @@ downgrading removes job history.
 
 The queue and worker are tested with local adapters. Personal AWS provisioning and
 production worker supervision remain future deployment steps.
+
+
+### Plain-text extraction
+
+`GET /api/v1/documents/{document_id}/versions/{version_id}/text` returns JSON with
+extracted text, character count, exact revision ID/number, source SHA-256, and
+`plain-text-v1` extractor identity. Members and administrators can read it within
+their tenant. The source must have a clean scan verdict; its stored bytes are
+verified through the existing download adapter before decoding.
+
+This first parser supports UTF-8 `text/plain` only, optionally with a leading BOM.
+It preserves whitespace and Unicode, rejects invalid encoding and ASCII controls
+other than tab/newline/carriage return, and never silently truncates. Source size
+is limited to 2 MiB and output to 1,000,000 Unicode code points. Uncleared files
+return 409, unsupported formats 415, oversized extraction 413, and invalid text
+422. PDF/DOCX parsing, OCR, persisted extraction artifacts, and indexing remain
+future slices. Extraction is on demand and does not change revision state.
+
+Responses use JSON with `no-store` and `nosniff`. Extracted document text remains
+untrusted input: consuming interfaces must render it as text, and future analysis
+must keep it separate from application instructions.

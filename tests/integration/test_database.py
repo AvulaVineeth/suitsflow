@@ -14,6 +14,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from tests.integration.audit_checks import exercise_audited_updates
 from tests.integration.document_checks import exercise_documents
+from tests.integration.extraction_checks import exercise_extraction
 from tests.integration.membership_checks import (
     exercise_memberships,
     revoke_roles,
@@ -140,6 +141,7 @@ def test_postgresql_migrations_sessions_and_readiness(
             exercise_documents(client, auth_settings, other_tenant_id, headers)
             exercise_uploads(auth_settings, other_tenant_id, headers)
             exercise_scan_jobs(auth_settings, other_tenant_id, headers)
+            exercise_extraction(auth_settings, other_tenant_id, headers)
             asyncio.run(set_access_status(settings, user_id, tenant_id, active=False))
             assert client.get(f"/api/v1/tenants/{tenant_id}", headers=headers).status_code == 403
             asyncio.run(set_access_status(settings, user_id, tenant_id, active=True))

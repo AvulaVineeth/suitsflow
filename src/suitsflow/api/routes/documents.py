@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,9 +21,16 @@ from suitsflow.schemas.document import (
     VersionCreate,
     VersionResponse,
 )
+from suitsflow.schemas.extraction import TextExtractionResponse
 from suitsflow.schemas.scan_job import ScanJobResponse
 from suitsflow.services.documents import DocumentService
 from suitsflow.services.downloads import ContentNotCleared, ContentNotUploaded, DownloadService
+from suitsflow.services.extraction import (
+    ExtractionService,
+    ExtractionTooLarge,
+    InvalidTextContent,
+    UnsupportedExtraction,
+)
 from suitsflow.services.scan_jobs import ScanJobs
 from suitsflow.services.scanner import ClamAVScanner, Scanner
 from suitsflow.services.scans import ScanService
@@ -124,6 +131,39 @@ def get_scanner(request: Request) -> Scanner:
         max_file_bytes=settings.clamav_max_file_bytes,
         max_scan_bytes=settings.clamav_max_scan_bytes,
     )
+
+
+@router.get("/{document_id}/versions/{version_id}/text", response_model=TextExtractionResponse)
+async def extract_text(
+    document_id: UUID,
+    version_id: UUID,
+    response: Response,
+    principal: Reader,
+    service: Service,
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
+) -> TextExtractionResponse:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    try:
+        return await ExtractionService(service.repository, storage).extract(
+            principal, document_id, version_id
+        )
+    except ResourceNotFound as exc:
+        raise HTTPException(status_code=404, detail="Document version not found") from exc
+    except (ContentNotCleared, ContentNotUploaded) as exc:
+        raise HTTPException(status_code=409, detail="Document content is not cleared") from exc
+    except UnsupportedExtraction as exc:
+        raise HTTPException(
+            status_code=415, detail="Text extraction supports text/plain only"
+        ) from exc
+    except ExtractionTooLarge as exc:
+        raise HTTPException(
+            status_code=413, detail="Document exceeds text extraction limits"
+        ) from exc
+    except InvalidTextContent as exc:
+        raise HTTPException(status_code=422, detail="Document is not supported UTF-8 text") from exc
+    except StorageUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Document storage unavailable") from exc
 
 
 @router.post("/{document_id}/versions/{version_id}/scan", response_model=VersionResponse)

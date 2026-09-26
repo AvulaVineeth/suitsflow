@@ -1,0 +1,3 @@
+
+# Linux scanner bind mounts require LF even on Windows checkouts.
+tests/fixtures/clamav/** text eol=lf
