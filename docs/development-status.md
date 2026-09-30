@@ -1,6 +1,6 @@
 # Development handoff
 
-Updated September 26, 2026.
+Updated September 30, 2026.
 
 ## Implemented and merged
 
@@ -14,15 +14,18 @@ Updated September 26, 2026.
 
 `feat/plain-text-extraction` adds on-demand UTF-8 extraction from clean revisions,
 with bounded input/output and exact revision/checksum/extractor provenance.
-All 106 local tests, lint, formatting and type checks pass. Exact-commit remote CI
-must pass before merge.
+Plain-text extraction passed 106 tests and remote CI and is merged at `8383f96`.
+The current branch `feat/docx-text-extraction` adds bounded main-body DOCX parsing;
+database integration, parser tests, lint, formatting and type checks pass.
+The initial full run had four scanner connection failures; all five scanner tests
+passed after starting the dedicated fixture. Exact-commit CI is required before merge.
 A Windows checkout issue in Linux scanner fixture line endings was fixed using
 `.gitattributes`; the local test scanner is healthy again.
 
 ## Next slices and boundaries
 
-1. Validate and merge the extraction slice.
-2. Add bounded PDF/DOCX extraction, then persisted extraction artifacts and indexing.
+1. Validate and merge the DOCX body extraction slice.
+2. Add bounded PDF extraction, then persisted extraction artifacts and indexing.
 3. Reconcile private objects orphaned by interrupted uploads.
 4. Add production identity, automatic scan enqueue and worker supervision.
 

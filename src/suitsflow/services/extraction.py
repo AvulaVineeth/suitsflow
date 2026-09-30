@@ -1,5 +1,7 @@
 from uuid import UUID
 
+from starlette.concurrency import run_in_threadpool
+
 from suitsflow.core.security import Principal, ResourceNotFound, require_document_access
 from suitsflow.repositories.documents import DocumentRepository
 from suitsflow.schemas.extraction import TextExtractionResponse
@@ -51,16 +53,21 @@ class ExtractionService:
             raise ResourceNotFound
         if version.content_status != "clean":
             raise ContentNotCleared
-        if version.mime_type != "text/plain":
+        from suitsflow.services.docx_text import DOCX_MIME, extract_docx_body
+
+        if version.mime_type not in {"text/plain", DOCX_MIME}:
             raise UnsupportedExtraction
         if version.file_size > MAX_SOURCE_BYTES:
             raise ExtractionTooLarge
-        number, checksum = version.version_number, version.checksum
+        number, checksum, mime = version.version_number, version.checksum, version.mime_type
         download = await DownloadService(self.repository, self.storage).download(
             principal, document_id, version_id
         )
         try:
-            text = extract_plain_text(download.body.read(MAX_SOURCE_BYTES + 1))
+            content = download.body.read(MAX_SOURCE_BYTES + 1)
+            text = await run_in_threadpool(
+                extract_plain_text if mime == "text/plain" else extract_docx_body, content
+            )
         finally:
             download.body.close()
         return TextExtractionResponse(
@@ -68,6 +75,7 @@ class ExtractionService:
             version_id=version_id,
             version_number=number,
             source_checksum=checksum,
+            extractor="plain-text-v1" if mime == "text/plain" else "docx-body-v1",
             text=text,
             character_count=len(text),
         )

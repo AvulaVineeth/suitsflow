@@ -1279,3 +1279,33 @@ future slices. Extraction is on demand and does not change revision state.
 Responses use JSON with `no-store` and `nosniff`. Extracted document text remains
 untrusted input: consuming interfaces must render it as text, and future analysis
 must keep it separate from application instructions.
+
+
+### DOCX body extraction
+
+The `/text` endpoint also accepts scanned-clean DOCX revisions and identifies the
+parser as `docx-body-v1`. It returns main-document-body text in XML order, including
+paragraph breaks, tabs, line breaks and table-cell paragraphs. This is not a visual
+layout reconstruction: headers, footers, notes, comments, images, list numbering,
+and formatting are not included. Tracked changes and alternate embedded content
+are rejected until an explicit interpretation policy is implemented. PDF remains
+unsupported (415); OCR and persisted extraction artifacts remain future work.
+
+Limits are 2 MiB source, 2,000 ZIP entries, 16 MiB declared expanded archive,
+4 MiB main document XML, 100,000 XML elements, depth 64 and 1,000,000 output code
+points. DTDs/entities are disabled through defusedxml; relationships are never
+resolved and archive entries are never written to disk. Invalid/unsupported DOCX
+content returns 422; exceeded limits return 413. See the
+[parser documentation](https://github.com/tiran/defusedxml) for XML protections.
+
+### Seeing development progress
+
+With Docker running, `docker compose up -d --build api` starts the current API.
+Open http://127.0.0.1:8000/docs for the interactive endpoint catalog. This is a
+backend developer interface, not the planned product dashboard. Authenticated
+operations require configured local development identity; the explorer does not
+bypass authorization or provide demo document storage.
+
+[GitHub Actions](https://github.com/AvulaVineeth/suitsflow/actions) shows tested
+commits. `docs/development-status.md` records completed features and next work.
+The React document-library and review UI has not been implemented yet.

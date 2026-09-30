@@ -5,11 +5,13 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from tests.integration.upload_checks import MemoryStorage, TestScanner
+from tests.test_docx_text import document, docx
 
 from suitsflow.api.routes.documents import get_scanner, get_storage
 from suitsflow.db.models import User
 from suitsflow.db.session import Database
 from suitsflow.main import create_app
+from suitsflow.services.docx_text import DOCX_MIME
 
 
 def exercise_extraction(settings, other_tenant, headers):
@@ -115,3 +117,16 @@ def exercise_extraction(settings, other_tenant, headers):
         url, _ = upload(b"%PDF-1.4\n", "application/pdf")
         clear(url)
         assert client.get(url + "/text", headers=headers).status_code == 415
+        url, version = upload(
+            docx(document("<w:p><w:r><w:t>Contract terms</w:t></w:r></w:p>")), DOCX_MIME
+        )
+        assert client.get(url + "/text", headers=headers).status_code == 409
+        clear(url)
+        result = client.get(url + "/text", headers=headers)
+        assert result.status_code == 200
+        assert result.json()["extractor"] == "docx-body-v1"
+        assert result.json()["text"] == "Contract terms\n"
+        assert result.json()["source_checksum"] == version["checksum"]
+        url, _ = upload(docx(document("<w:del/>")), DOCX_MIME)
+        clear(url)
+        assert client.get(url + "/text", headers=headers).status_code == 422

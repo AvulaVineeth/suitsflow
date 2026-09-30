@@ -154,14 +154,14 @@ async def extract_text(
         raise HTTPException(status_code=409, detail="Document content is not cleared") from exc
     except UnsupportedExtraction as exc:
         raise HTTPException(
-            status_code=415, detail="Text extraction supports text/plain only"
+            status_code=415, detail="Text extraction supports text/plain and DOCX"
         ) from exc
     except ExtractionTooLarge as exc:
         raise HTTPException(
             status_code=413, detail="Document exceeds text extraction limits"
         ) from exc
     except InvalidTextContent as exc:
-        raise HTTPException(status_code=422, detail="Document is not supported UTF-8 text") from exc
+        raise HTTPException(status_code=422, detail="Document content cannot be extracted") from exc
     except StorageUnavailable as exc:
         raise HTTPException(status_code=503, detail="Document storage unavailable") from exc
 
