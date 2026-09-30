@@ -1,11 +1,13 @@
 import asyncio
 import hashlib
+import sys
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from tests.integration.upload_checks import MemoryStorage, TestScanner
 from tests.test_docx_text import document, docx
+from tests.test_pdf_text import pdf
 
 from suitsflow.api.routes.documents import get_scanner, get_storage
 from suitsflow.db.models import User
@@ -111,12 +113,23 @@ def exercise_extraction(settings, other_tenant, headers):
         url, _ = upload(b"invalid\x1btext")
         clear(url)
         assert client.get(url + "/text", headers=headers).status_code == 422
+        if sys.platform == "linux":
+            pdf_url, pdf_version = upload(pdf(), "application/pdf")
+            assert client.get(pdf_url + "/text", headers=headers).status_code == 409
+            clear(pdf_url)
+            extracted = client.get(pdf_url + "/text", headers=headers)
+            assert extracted.status_code == 200
+            assert extracted.json()["extractor"] == "pdf-text-v1"
+            assert "Contract terms" in extracted.json()["text"]
+            assert extracted.json()["source_checksum"] == pdf_version["checksum"]
         url, _ = upload(b"a" * 1_000_001)
         clear(url)
         assert client.get(url + "/text", headers=headers).status_code == 413
         url, _ = upload(b"%PDF-1.4\n", "application/pdf")
         clear(url)
-        assert client.get(url + "/text", headers=headers).status_code == 415
+        assert client.get(url + "/text", headers=headers).status_code == (
+            422 if sys.platform == "linux" else 503
+        )
         url, version = upload(
             docx(document("<w:p><w:r><w:t>Contract terms</w:t></w:r></w:p>")), DOCX_MIME
         )

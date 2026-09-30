@@ -1268,13 +1268,13 @@ extracted text, character count, exact revision ID/number, source SHA-256, and
 their tenant. The source must have a clean scan verdict; its stored bytes are
 verified through the existing download adapter before decoding.
 
-This first parser supports UTF-8 `text/plain` only, optionally with a leading BOM.
+The plain-text parser accepts UTF-8 `text/plain`, optionally with a leading BOM.
 It preserves whitespace and Unicode, rejects invalid encoding and ASCII controls
 other than tab/newline/carriage return, and never silently truncates. Source size
 is limited to 2 MiB and output to 1,000,000 Unicode code points. Uncleared files
 return 409, unsupported formats 415, oversized extraction 413, and invalid text
-422. PDF/DOCX parsing, OCR, persisted extraction artifacts, and indexing remain
-future slices. Extraction is on demand and does not change revision state.
+422. PDF and DOCX parsing are described below. OCR, persisted extraction artifacts,
+and indexing remain future slices. Extraction is on demand and does not change revision state.
 
 Responses use JSON with `no-store` and `nosniff`. Extracted document text remains
 untrusted input: consuming interfaces must render it as text, and future analysis
@@ -1288,8 +1288,7 @@ parser as `docx-body-v1`. It returns main-document-body text in XML order, inclu
 paragraph breaks, tabs, line breaks and table-cell paragraphs. This is not a visual
 layout reconstruction: headers, footers, notes, comments, images, list numbering,
 and formatting are not included. Tracked changes and alternate embedded content
-are rejected until an explicit interpretation policy is implemented. PDF remains
-unsupported (415); OCR and persisted extraction artifacts remain future work.
+are rejected until an explicit interpretation policy is implemented. PDF support is described below; OCR and persisted extraction artifacts remain future work.
 
 Limits are 2 MiB source, 2,000 ZIP entries, 16 MiB declared expanded archive,
 4 MiB main document XML, 100,000 XML elements, depth 64 and 1,000,000 output code
@@ -1309,3 +1308,27 @@ bypass authorization or provide demo document storage.
 [GitHub Actions](https://github.com/AvulaVineeth/suitsflow/actions) shows tested
 commits. `docs/development-status.md` records completed features and next work.
 The React document-library and review UI has not been implemented yet.
+
+
+### PDF text extraction
+
+The `/text` endpoint now accepts scanned-clean PDFs and reports `pdf-text-v1`.
+It extracts the existing text layer in page order with a newline between pages.
+It does not perform OCR, reconstruct layout or guarantee semantic reading order.
+Encrypted, malformed and wholly textless PDFs return 422. Mixed image/text pages
+may produce incomplete text; image content is never interpreted in this slice.
+
+PDF parsing requires Linux (including the supplied Docker image). Native Windows
+returns 503. Each extraction runs in a separate child with a 512 MiB address-space
+limit, 10-second CPU limit, 15-second parent timeout and two concurrent children
+per API process. The child cannot create regular files through its resource limit;
+this is resource containment, not a complete security sandbox. Deployment still
+needs container isolation and aggregate CPU/memory limits.
+
+Limits are 2 MiB input, 100 pages, 8 MiB accumulated decoded page content streams
+and 1,000,000 output code points. Decompression happens inside the bounded child,
+not the API process. Resource excess returns 413; unavailable capacity returns 503.
+No partial text is returned on failure. Parser stderr is discarded to keep source
+content out of application logs. Linux worker behavior is exercised in CI and in
+the local Docker image. The PDF parser's [text extraction documentation](https://pypdf.readthedocs.io/en/stable/user/extract-text.html)
+describes text-layer and reading-order limitations.

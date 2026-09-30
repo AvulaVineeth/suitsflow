@@ -54,8 +54,9 @@ class ExtractionService:
         if version.content_status != "clean":
             raise ContentNotCleared
         from suitsflow.services.docx_text import DOCX_MIME, extract_docx_body
+        from suitsflow.services.pdf_text import extract_pdf_text
 
-        if version.mime_type not in {"text/plain", DOCX_MIME}:
+        if version.mime_type not in {"text/plain", DOCX_MIME, "application/pdf"}:
             raise UnsupportedExtraction
         if version.file_size > MAX_SOURCE_BYTES:
             raise ExtractionTooLarge
@@ -65,9 +66,12 @@ class ExtractionService:
         )
         try:
             content = download.body.read(MAX_SOURCE_BYTES + 1)
-            text = await run_in_threadpool(
-                extract_plain_text if mime == "text/plain" else extract_docx_body, content
-            )
+            parser = {
+                "text/plain": extract_plain_text,
+                DOCX_MIME: extract_docx_body,
+                "application/pdf": extract_pdf_text,
+            }[mime]
+            text = await run_in_threadpool(parser, content)
         finally:
             download.body.close()
         return TextExtractionResponse(
@@ -75,7 +79,13 @@ class ExtractionService:
             version_id=version_id,
             version_number=number,
             source_checksum=checksum,
-            extractor="plain-text-v1" if mime == "text/plain" else "docx-body-v1",
+            extractor=(
+                "plain-text-v1"
+                if mime == "text/plain"
+                else "pdf-text-v1"
+                if mime == "application/pdf"
+                else "docx-body-v1"
+            ),
             text=text,
             character_count=len(text),
         )

@@ -88,7 +88,7 @@ def test_extraction_closes_file_and_preserves_provenance(failure):
     "change,error",
     [
         ({"content_status": "pending_scan"}, ContentNotCleared),
-        ({"mime_type": "application/pdf"}, UnsupportedExtraction),
+        ({"mime_type": "application/unsupported"}, UnsupportedExtraction),
         ({"file_size": MAX_SOURCE_BYTES + 1}, ExtractionTooLarge),
         (None, ResourceNotFound),
     ],

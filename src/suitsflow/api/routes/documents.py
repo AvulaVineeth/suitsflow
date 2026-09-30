@@ -31,6 +31,7 @@ from suitsflow.services.extraction import (
     InvalidTextContent,
     UnsupportedExtraction,
 )
+from suitsflow.services.pdf_text import PdfExtractionUnavailable
 from suitsflow.services.scan_jobs import ScanJobs
 from suitsflow.services.scanner import ClamAVScanner, Scanner
 from suitsflow.services.scans import ScanService
@@ -154,7 +155,7 @@ async def extract_text(
         raise HTTPException(status_code=409, detail="Document content is not cleared") from exc
     except UnsupportedExtraction as exc:
         raise HTTPException(
-            status_code=415, detail="Text extraction supports text/plain and DOCX"
+            status_code=415, detail="Document format is not supported for extraction"
         ) from exc
     except ExtractionTooLarge as exc:
         raise HTTPException(
@@ -162,6 +163,8 @@ async def extract_text(
         ) from exc
     except InvalidTextContent as exc:
         raise HTTPException(status_code=422, detail="Document content cannot be extracted") from exc
+    except PdfExtractionUnavailable as exc:
+        raise HTTPException(status_code=503, detail="PDF extraction unavailable") from exc
     except StorageUnavailable as exc:
         raise HTTPException(status_code=503, detail="Document storage unavailable") from exc
 
