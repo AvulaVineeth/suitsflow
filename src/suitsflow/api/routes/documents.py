@@ -21,7 +21,7 @@ from suitsflow.schemas.document import (
     VersionCreate,
     VersionResponse,
 )
-from suitsflow.schemas.extraction import TextExtractionResponse
+from suitsflow.schemas.extraction import SavedExtractionResponse, TextExtractionResponse
 from suitsflow.schemas.scan_job import ScanJobResponse
 from suitsflow.services.documents import DocumentService
 from suitsflow.services.downloads import ContentNotCleared, ContentNotUploaded, DownloadService
@@ -32,6 +32,7 @@ from suitsflow.services.extraction import (
     UnsupportedExtraction,
 )
 from suitsflow.services.pdf_text import PdfExtractionUnavailable
+from suitsflow.services.saved_extractions import SavedExtractions
 from suitsflow.services.scan_jobs import ScanJobs
 from suitsflow.services.scanner import ClamAVScanner, Scanner
 from suitsflow.services.scans import ScanService
@@ -167,6 +168,64 @@ async def extract_text(
         raise HTTPException(status_code=503, detail="PDF extraction unavailable") from exc
     except StorageUnavailable as exc:
         raise HTTPException(status_code=503, detail="Document storage unavailable") from exc
+
+
+@router.get(
+    "/{document_id}/versions/{version_id}/extraction", response_model=SavedExtractionResponse
+)
+async def get_saved_extraction(
+    document_id: UUID,
+    version_id: UUID,
+    response: Response,
+    principal: Reader,
+    service: Service,
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
+) -> SavedExtractionResponse:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    try:
+        return await SavedExtractions(service.repository).get(
+            principal, document_id, version_id, storage
+        )
+    except ResourceNotFound as exc:
+        raise HTTPException(status_code=404, detail="Saved extraction not found") from exc
+    except ContentNotCleared as exc:
+        raise HTTPException(status_code=409, detail="Document content is not cleared") from exc
+    except StorageUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Extraction storage unavailable") from exc
+
+
+@router.post(
+    "/{document_id}/versions/{version_id}/extraction", response_model=SavedExtractionResponse
+)
+async def save_extraction(
+    document_id: UUID,
+    version_id: UUID,
+    response: Response,
+    principal: Writer,
+    service: Service,
+    storage: Annotated[ObjectStorage, Depends(get_storage)],
+) -> SavedExtractionResponse:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    try:
+        return await SavedExtractions(service.repository).save(
+            principal, document_id, version_id, storage
+        )
+    except AccessDenied as exc:
+        raise HTTPException(status_code=403, detail="Forbidden") from exc
+    except ResourceNotFound as exc:
+        raise HTTPException(status_code=404, detail="Document version not found") from exc
+    except (ContentNotCleared, ContentNotUploaded) as exc:
+        raise HTTPException(status_code=409, detail="Document content is not cleared") from exc
+    except UnsupportedExtraction as exc:
+        raise HTTPException(status_code=415, detail="Document format is not supported") from exc
+    except ExtractionTooLarge as exc:
+        raise HTTPException(status_code=413, detail="Document exceeds extraction limits") from exc
+    except InvalidTextContent as exc:
+        raise HTTPException(status_code=422, detail="Document content cannot be extracted") from exc
+    except (StorageUnavailable, PdfExtractionUnavailable) as exc:
+        raise HTTPException(status_code=503, detail="Extraction unavailable") from exc
 
 
 @router.post("/{document_id}/versions/{version_id}/scan", response_model=VersionResponse)

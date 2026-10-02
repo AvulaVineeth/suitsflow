@@ -1,6 +1,6 @@
 # Development handoff
 
-Updated September 30, 2026.
+Updated October 1, 2026.
 
 ## Implemented and merged
 
@@ -13,19 +13,21 @@ Updated September 30, 2026.
 
 ## Current slice
 
-`feat/pdf-text-extraction` adds PDF text-layer extraction in Linux child processes.
-Limits: 512 MiB address space, 10 seconds CPU, 15 seconds wall time, 2 MiB source,
-100 pages, 8 MiB decoded page streams, 1,000,000 code points, two children per API
-process. Encrypted, malformed and wholly textless PDFs fail; there is no OCR.
-Native Windows returns unavailable; the Docker runtime supports the real worker.
-Real worker checks passed in a network-disabled, read-only Linux container.
-Local regression: 127 passed, one Linux-only test skipped on Windows; the real
-worker passed separately in Docker. Lint, formatting and type checks pass.
-Exact-commit CI must pass before merge.
+PDF extraction `7aa6a26` passed CI and is merged. The current branch
+`feat/saved-extraction-artifacts` adds migration 0008 and POST/GET `/extraction`.
+Extracted UTF-8 text remains in private object storage; immutable PostgreSQL metadata
+links it to tenant, revision, source checksum, parser version and output checksum.
+Metadata and audit commit together. Repeated saves reuse a record; concurrent
+first saves converge to one published record. Unreferenced private objects from
+failed writes or concurrent losers need later reconciliation.
+
+Local lint, formatting and type checks pass. The full local suite passed 127 tests
+with one Linux-only skip; exact-commit CI must pass before merge. No live AWS calls are used; tests inject in-memory storage.
+The learning walkthrough is `docs/learning-extraction-pipeline.md`.
 
 ## Next slices
 
-1. Persist extraction artifacts and processing state with revision provenance.
+1. Add durable extraction jobs with queued/running/completed/failed states.
 2. Add a document-library UI for revisions, quarantine states and extracted text.
 3. Add indexing, production identity, automatic scan enqueue and worker supervision.
 4. Reconcile private objects orphaned by interrupted uploads.

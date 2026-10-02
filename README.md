@@ -1022,8 +1022,8 @@ Document registration accepts `name` (trimmed, 1–255 characters) and `document
 `file_size` (1–104857600 bytes), and `checksum` (64 lowercase SHA-256 hex characters).
 Supported media types are PDF, plain text, and DOCX. At registration these are
 **caller-declared metadata**, not verified file contents. No storage key or upload
-URL is accepted or returned. Documents remain `draft`; extraction and ready-state
-transitions are future slices. The version creator is recorded as
+URL is accepted or returned. Documents remain `draft`; text extraction is described below, while broader
+ready-state transitions remain future slices. The version creator is recorded as
 `created_by`, not as a verified uploader.
 
 Tenant and creator IDs come from the authenticated principal. Unknown request fields
@@ -1273,8 +1273,8 @@ It preserves whitespace and Unicode, rejects invalid encoding and ASCII controls
 other than tab/newline/carriage return, and never silently truncates. Source size
 is limited to 2 MiB and output to 1,000,000 Unicode code points. Uncleared files
 return 409, unsupported formats 415, oversized extraction 413, and invalid text
-422. PDF and DOCX parsing are described below. OCR, persisted extraction artifacts,
-and indexing remain future slices. Extraction is on demand and does not change revision state.
+422. PDF/DOCX parsing and saved artifacts are described below. OCR and indexing
+remain future slices. The `/text` endpoint parses on demand without changing revision state.
 
 Responses use JSON with `no-store` and `nosniff`. Extracted document text remains
 untrusted input: consuming interfaces must render it as text, and future analysis
@@ -1288,7 +1288,7 @@ parser as `docx-body-v1`. It returns main-document-body text in XML order, inclu
 paragraph breaks, tabs, line breaks and table-cell paragraphs. This is not a visual
 layout reconstruction: headers, footers, notes, comments, images, list numbering,
 and formatting are not included. Tracked changes and alternate embedded content
-are rejected until an explicit interpretation policy is implemented. PDF support is described below; OCR and persisted extraction artifacts remain future work.
+are rejected until an explicit interpretation policy is implemented. PDF support is described below; OCR remains future work; saved artifacts are described below.
 
 Limits are 2 MiB source, 2,000 ZIP entries, 16 MiB declared expanded archive,
 4 MiB main document XML, 100,000 XML elements, depth 64 and 1,000,000 output code
@@ -1332,3 +1332,40 @@ No partial text is returned on failure. Parser stderr is discarded to keep sourc
 content out of application logs. Linux worker behavior is exercised in CI and in
 the local Docker image. The PDF parser's [text extraction documentation](https://pypdf.readthedocs.io/en/stable/user/extract-text.html)
 describes text-layer and reading-order limitations.
+
+
+### Saved extraction artifacts
+
+Administrators can `POST /api/v1/documents/{document_id}/versions/{version_id}/extraction`
+to save the current parser's result. It returns 200 for both creation and repeat
+requests. Members and administrators can GET the same URL to read the saved private text object without rerunning the parser. A missing result returns 404; uncleared source content returns 409.
+Responses include the artifact ID, source SHA-256, extracted-text SHA-256, parser
+identity and creation time, alongside text and revision provenance.
+
+Migration 0008 adds immutable artifact metadata rows, unique per tenant/revision/parser.
+Extracted UTF-8 text is stored in private object storage, consistent with the data
+architecture. PostgreSQL stores its exact object reference, size and checksums.
+A composite foreign key requires the source checksum to match the actual revision.
+Artifact metadata and audit commit atomically. Repeated saves reuse the record; concurrent
+first saves may repeat parsing but converge to one record and one audit event.
+Parser I/O holds no revision lock. Publication rechecks clean status and current
+administrator membership before committing. GET checks tenant membership and clean status, then verifies the saved object
+length and SHA-256 before returning text.
+
+Artifact metadata cannot be updated, deleted or truncated through ordinary SQL: retention
+and privileged maintenance require a separately designed process. A migration
+downgrade drops this artifact history. Extractor changes require a new version
+identifier and an updated database constraint; old artifacts remain reproducible
+references. The source and text hashes establish byte identity, not semantic
+correctness, completeness or safety. Text remains untrusted input.
+
+Saving is synchronous in this slice; no queued/running/failed extraction states
+are claimed yet. Those jobs and processing states are the next step, followed by
+the document-library UI. See [the learning walkthrough](docs/learning-extraction-pipeline.md)
+for the engineering reasoning and code map.
+
+Object storage writes and database commits are not one distributed transaction.
+A failed commit, revoked permission or concurrent loser can leave an unreferenced
+private artifact object. Reconciliation is still pending; never delete an object
+on an uncertain commit result. All storage behavior in this slice is tested with
+local in-memory adapters and the existing mocked S3 tests, not a live AWS account.

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -12,3 +13,9 @@ class TextExtractionResponse(BaseModel):
     extractor: Literal["plain-text-v1", "docx-body-v1", "pdf-text-v1"] = "plain-text-v1"
     text: str
     character_count: int
+
+
+class SavedExtractionResponse(TextExtractionResponse):
+    id: UUID
+    text_checksum: str
+    created_at: datetime

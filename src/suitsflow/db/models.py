@@ -135,6 +135,7 @@ class Document(Base):
 class DocumentVersion(Base):
     __tablename__ = "document_versions"
     __table_args__ = (
+        UniqueConstraint("tenant_id", "id", "checksum", name="uq_document_versions_source"),
         UniqueConstraint("tenant_id", "id"),
         UniqueConstraint(
             "tenant_id", "document_id", "version_number", name="uq_document_versions_number"
@@ -221,3 +222,43 @@ class DocumentScanJob(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class DocumentExtraction(Base):
+    __tablename__ = "document_extractions"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "version_id", "extractor", name="uq_extraction_parser"),
+        ForeignKeyConstraint(
+            ["tenant_id", "version_id", "source_checksum"],
+            ["document_versions.tenant_id", "document_versions.id", "document_versions.checksum"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "created_by"], ["users.tenant_id", "users.id"], ondelete="RESTRICT"
+        ),
+        CheckConstraint(
+            "extractor IN ('plain-text-v1', 'docx-body-v1', 'pdf-text-v1')", name="valid_extractor"
+        ),
+        CheckConstraint(
+            "character_count >= 0 AND character_count <= 1000000",
+            name="valid_text_length",
+        ),
+        CheckConstraint("text_bytes >= 0 AND text_bytes <= 4000000", name="valid_text_bytes"),
+        CheckConstraint(
+            "length(storage_bucket) > 0 AND length(storage_key) > 0", name="storage_reference"
+        ),
+        CheckConstraint("text_checksum ~ '^[0-9a-f]{64}$'", name="valid_text_checksum"),
+    )
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column()
+    version_id: Mapped[UUID] = mapped_column()
+    source_checksum: Mapped[str] = mapped_column(String(64))
+    extractor: Mapped[str] = mapped_column(String(32))
+    storage_bucket: Mapped[str] = mapped_column(String(63))
+    storage_key: Mapped[str] = mapped_column(String(512))
+    storage_version_id: Mapped[str | None] = mapped_column(String(1024))
+    text_bytes: Mapped[int] = mapped_column(Integer)
+    character_count: Mapped[int] = mapped_column(Integer)
+    text_checksum: Mapped[str] = mapped_column(String(64))
+    created_by: Mapped[UUID] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

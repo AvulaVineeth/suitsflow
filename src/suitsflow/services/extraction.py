@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from starlette.concurrency import run_in_threadpool
@@ -10,6 +11,18 @@ from suitsflow.services.storage import ObjectStorage
 
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
 MAX_TEXT_CHARACTERS = 1_000_000
+
+ExtractorName = Literal["plain-text-v1", "docx-body-v1", "pdf-text-v1"]
+
+
+def extractor_for(mime: str) -> ExtractorName:
+    if mime == "text/plain":
+        return "plain-text-v1"
+    if mime == "application/pdf":
+        return "pdf-text-v1"
+    if mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        return "docx-body-v1"
+    raise UnsupportedExtraction
 
 
 class UnsupportedExtraction(Exception):
@@ -79,13 +92,7 @@ class ExtractionService:
             version_id=version_id,
             version_number=number,
             source_checksum=checksum,
-            extractor=(
-                "plain-text-v1"
-                if mime == "text/plain"
-                else "pdf-text-v1"
-                if mime == "application/pdf"
-                else "docx-body-v1"
-            ),
+            extractor=extractor_for(mime),
             text=text,
             character_count=len(text),
         )
