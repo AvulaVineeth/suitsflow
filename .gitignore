@@ -21,3 +21,9 @@ postgres-data/
 .DS_Store
 Thumbs.db
 
+# Frontend dependencies and generated output
+frontend/node_modules/
+frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
+
