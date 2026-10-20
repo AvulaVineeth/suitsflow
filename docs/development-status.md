@@ -1,6 +1,6 @@
 # Development handoff
 
-Updated October 1, 2026.
+Updated October 20, 2026.
 
 ## Implemented and merged
 
@@ -13,21 +13,24 @@ Updated October 1, 2026.
 
 ## Current slice
 
-PDF extraction `7aa6a26` passed CI and is merged. The current branch
-`feat/saved-extraction-artifacts` adds migration 0008 and POST/GET `/extraction`.
-Extracted UTF-8 text remains in private object storage; immutable PostgreSQL metadata
-links it to tenant, revision, source checksum, parser version and output checksum.
-Metadata and audit commit together. Repeated saves reuse a record; concurrent
-first saves converge to one published record. Unreferenced private objects from
-failed writes or concurrent losers need later reconciliation.
+Saved artifacts `7669f7e` passed CI and are merged. The active branch
+`feat/extraction-processing-jobs` adds migration 0009, queued extraction endpoints,
+lease recovery, stale-worker fencing and `--queue extractions` worker support.
+Artifact metadata, completion and audits share one transaction. Worker completion
+references the exact tenant/revision/parser artifact through a composite FK.
+Local validation: 128 tests passed, one Linux-only test skipped on Windows;
+formatting, lint, type checking and migration round trips passed. Remote CI must
+pass for the exact feature commit before merging to main.
 
-Local lint, formatting and type checks pass. The full local suite passed 127 tests
-with one Linux-only skip; exact-commit CI must pass before merge. No live AWS calls are used; tests inject in-memory storage.
-The learning walkthrough is `docs/learning-extraction-pipeline.md`.
+Local Docker image refresh remains blocked by UnknownIssuer when downloading
+packages. Trying the container system trust store did not resolve it; no TLS
+verification was disabled and the Dockerfile remains unchanged. The local API image
+may lag these changes. The development database was last observed empty.
+No live AWS calls were made; extraction jobs are tested with in-memory storage.
 
 ## Next slices
 
-1. Add durable extraction jobs with queued/running/completed/failed states.
+1. Validate and merge the extraction processing slice.
 2. Add a document-library UI for revisions, quarantine states and extracted text.
 3. Add indexing, production identity, automatic scan enqueue and worker supervision.
 4. Reconcile private objects orphaned by interrupted uploads.

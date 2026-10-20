@@ -22,6 +22,7 @@ from suitsflow.schemas.document import (
     VersionResponse,
 )
 from suitsflow.schemas.extraction import SavedExtractionResponse, TextExtractionResponse
+from suitsflow.schemas.extraction_job import ExtractionJobResponse
 from suitsflow.schemas.scan_job import ScanJobResponse
 from suitsflow.services.documents import DocumentService
 from suitsflow.services.downloads import ContentNotCleared, ContentNotUploaded, DownloadService
@@ -31,6 +32,7 @@ from suitsflow.services.extraction import (
     InvalidTextContent,
     UnsupportedExtraction,
 )
+from suitsflow.services.extraction_jobs import ExtractionJobs
 from suitsflow.services.pdf_text import PdfExtractionUnavailable
 from suitsflow.services.saved_extractions import SavedExtractions
 from suitsflow.services.scan_jobs import ScanJobs
@@ -77,6 +79,44 @@ async def get_scan_job(
         raise HTTPException(status_code=403, detail="Forbidden") from exc
     except ResourceNotFound as exc:
         raise HTTPException(status_code=404, detail="Scan job not found") from exc
+
+
+@router.post(
+    "/{document_id}/versions/{version_id}/extraction-job",
+    response_model=ExtractionJobResponse,
+    status_code=202,
+)
+async def enqueue_extraction(
+    document_id: UUID,
+    version_id: UUID,
+    principal: Annotated[Principal, Depends(get_principal)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ExtractionJobResponse:
+    try:
+        return await ExtractionJobs(session).enqueue(principal, document_id, version_id)
+    except AccessDenied as exc:
+        raise HTTPException(status_code=403, detail="Forbidden") from exc
+    except ResourceNotFound as exc:
+        raise HTTPException(status_code=404, detail="Document version not found") from exc
+    except ContentNotCleared as exc:
+        raise HTTPException(status_code=409, detail="Document content is not cleared") from exc
+
+
+@router.get(
+    "/{document_id}/versions/{version_id}/extraction-job", response_model=ExtractionJobResponse
+)
+async def get_extraction_job(
+    document_id: UUID,
+    version_id: UUID,
+    principal: Annotated[Principal, Depends(get_principal)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ExtractionJobResponse:
+    try:
+        return await ExtractionJobs(session).get(principal, document_id, version_id)
+    except AccessDenied as exc:
+        raise HTTPException(status_code=403, detail="Forbidden") from exc
+    except ResourceNotFound as exc:
+        raise HTTPException(status_code=404, detail="Extraction job not found") from exc
 
 
 def get_reader(principal: Annotated[Principal, Depends(get_principal)]) -> Principal:

@@ -228,6 +228,7 @@ class DocumentExtraction(Base):
     __tablename__ = "document_extractions"
     __table_args__ = (
         UniqueConstraint("tenant_id", "version_id", "extractor", name="uq_extraction_parser"),
+        UniqueConstraint("tenant_id", "version_id", "extractor", "id", name="uq_extraction_result"),
         ForeignKeyConstraint(
             ["tenant_id", "version_id", "source_checksum"],
             ["document_versions.tenant_id", "document_versions.id", "document_versions.checksum"],
@@ -262,3 +263,54 @@ class DocumentExtraction(Base):
     text_checksum: Mapped[str] = mapped_column(String(64))
     created_by: Mapped[UUID] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DocumentExtractionJob(Base):
+    __tablename__ = "document_extraction_jobs"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "version_id", "extractor"),
+        ForeignKeyConstraint(
+            ["tenant_id", "version_id", "extractor", "result_id"],
+            [
+                "document_extractions.tenant_id",
+                "document_extractions.version_id",
+                "document_extractions.extractor",
+                "document_extractions.id",
+            ],
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "(status = 'completed' AND result_id IS NOT NULL) OR "
+            "(status <> 'completed' AND result_id IS NULL)",
+            name="valid_result",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "version_id"],
+            ["document_versions.tenant_id", "document_versions.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "requested_by"], ["users.tenant_id", "users.id"], ondelete="RESTRICT"
+        ),
+        CheckConstraint("attempts >= 0", name="valid_attempts"),
+        CheckConstraint(
+            "(status = 'running' AND claim_token IS NOT NULL AND lease_until IS NOT NULL) OR "
+            "(status IN ('pending', 'completed', 'failed') "
+            "AND claim_token IS NULL AND lease_until IS NULL)",
+            name="valid_claim",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column()
+    version_id: Mapped[UUID] = mapped_column()
+    extractor: Mapped[str] = mapped_column(String(32))
+    result_id: Mapped[UUID | None] = mapped_column()
+    requested_by: Mapped[UUID] = mapped_column()
+    status: Mapped[str] = mapped_column(String(16), server_default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, server_default="0")
+    claim_token: Mapped[UUID | None] = mapped_column()
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

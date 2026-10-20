@@ -74,13 +74,35 @@ The API explorer at http://127.0.0.1:8000/docs shows request/response schemas.
 Protected calls still require configured development identity. AWS is not needed
 for the tests; local fake storage isolates the workflow from cloud credentials.
 
-## What comes next
+## Durable jobs and worker ownership
 
-This save operation is synchronous. Durable extraction jobs will expose pending,
-running, completed and failed states, with leases and retries as scan jobs already
-do. Saved artifacts then become stable input to chunking, embedding and retrieval.
-A document-library UI will make these states visible to users. None of those future
-features should be confused with this slice's completed persistence layer.
+The direct save endpoint still works synchronously. The new `/extraction-job`
+endpoint adds durable pending/running/completed/failed states; enqueue only writes
+PostgreSQL state and returns. A separate worker performs storage I/O and parsing.
+This is different from starting an in-process background task that disappears if
+the web server restarts.
+
+A lease gives a worker temporary ownership. Suppose worker A stalls and its lease
+expires. Worker B takes over with a new claim token. If A later finishes, its token
+no longer matches and it cannot publish artifact metadata or complete the job.
+The completion check runs while holding database locks in the same transaction as
+the artifact and audit writes. Merely checking the token before parsing would leave
+a race between that check and publication.
+
+`FOR UPDATE SKIP LOCKED` lets workers take different jobs without waiting on one
+another. Locks are released during parsing. This gives at-least-once processing:
+work may repeat after a crash, while uniqueness and claim fencing prevent duplicate
+published artifacts and obsolete completions. Exactly-once execution is not claimed.
+
+Read `services/extraction_jobs.py`, the publication hook in
+`services/saved_extractions.py`, and `tests/integration/extraction_job_checks.py`.
+Trace the stale-worker test: it replaces the claim token during object upload and
+checks that no artifact metadata is published. Then trace the completion-audit
+failure test: both job completion and new artifact metadata roll back.
+
+Next comes the document-library UI, then chunking, embeddings and retrieval using
+these saved artifacts as stable input. Automatic scan-to-extraction enqueue and
+production worker supervision remain deployment/workflow work.
 
 ## A distributed-systems lesson
 

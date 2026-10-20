@@ -1,4 +1,5 @@
 import hashlib
+from collections.abc import Awaitable, Callable
 from io import BytesIO
 from typing import cast
 from uuid import UUID, uuid4
@@ -90,7 +91,13 @@ class SavedExtractions:
         return await self._read(version, record, storage)
 
     async def save(
-        self, principal: Principal, document_id: UUID, version_id: UUID, storage: ObjectStorage
+        self,
+        principal: Principal,
+        document_id: UUID,
+        version_id: UUID,
+        storage: ObjectStorage,
+        *,
+        on_publish: Callable[[UUID], Awaitable[None]] | None = None,
     ) -> SavedExtractionResponse:
         require_document_access(principal, write=True)
         try:
@@ -99,7 +106,24 @@ class SavedExtractions:
             except ResourceNotFound:
                 pass
             else:
-                await self.session.rollback()
+                if on_publish is not None:
+                    version = await self.repository.version(
+                        principal.tenant_id, document_id, version_id, lock=True
+                    )
+                    if version is None:
+                        raise ResourceNotFound
+                    if version.content_status != "clean":
+                        raise ContentNotCleared
+                    current = await MembershipRepository(self.session).get_principal(
+                        Identity(principal.user_id, principal.tenant_id)
+                    )
+                    if current is None:
+                        raise AccessDenied
+                    require_document_access(current, write=True)
+                    await on_publish(response.id)
+                    await self.session.commit()
+                else:
+                    await self.session.rollback()
                 return response
             # Parsing performs verified I/O after releasing its read transaction.
             extracted = await ExtractionService(self.repository, storage).extract(
@@ -157,6 +181,8 @@ class SavedExtractions:
                     action="document.version_extraction_saved",
                     version_number=version.version_number,
                 )
+            if on_publish is not None:
+                await on_publish(record.id)
             await self.session.commit()
             return await self._read(version, record, storage)
         except BaseException:

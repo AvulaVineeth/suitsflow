@@ -1359,9 +1359,8 @@ identifier and an updated database constraint; old artifacts remain reproducible
 references. The source and text hashes establish byte identity, not semantic
 correctness, completeness or safety. Text remains untrusted input.
 
-Saving is synchronous in this slice; no queued/running/failed extraction states
-are claimed yet. Those jobs and processing states are the next step, followed by
-the document-library UI. See [the learning walkthrough](docs/learning-extraction-pipeline.md)
+The direct save endpoint is synchronous. Queued processing is available through
+the extraction-job endpoints below; the document-library UI remains future work. See [the learning walkthrough](docs/learning-extraction-pipeline.md)
 for the engineering reasoning and code map.
 
 Object storage writes and database commits are not one distributed transaction.
@@ -1369,3 +1368,34 @@ A failed commit, revoked permission or concurrent loser can leave an unreference
 private artifact object. Reconciliation is still pending; never delete an object
 on an uncertain commit result. All storage behavior in this slice is tested with
 local in-memory adapters and the existing mocked S3 tests, not a live AWS account.
+
+
+### Queued extraction processing
+
+Administrators can POST `/api/v1/documents/{document_id}/versions/{version_id}/extraction-job`
+to queue a clean revision (202); members can GET the same path to inspect status.
+The response includes `pending`, `running`, `completed` or `failed`, attempt count,
+parser identity and the saved artifact's `result_id` on completion. Enqueue performs
+no object-storage or parser I/O. Each tenant/revision/parser has one durable job.
+Repeated enqueue returns that job; failed jobs can be explicitly requeued.
+
+Once the personal storage account is configured, run
+`python -m suitsflow.worker --queue extractions --max-jobs 100` to process up to 100
+available jobs. The default queue remains `scans`. Extraction workers do not need
+scanner configuration, but revisions must already be clean. No worker is launched
+automatically; a deployment supervisor must invoke it. Scanning does not yet
+automatically enqueue extraction.
+
+Workers claim with `FOR UPDATE SKIP LOCKED` and a 15-minute lease. A crashed worker's
+expired claim can be reclaimed. Claim tokens fence old workers: artifact metadata,
+job completion and audit events commit together only while the worker owns a valid
+claim. Existing artifacts are reused. A composite result foreign key prevents a
+completed job from pointing to another tenant/revision/parser's artifact.
+
+Expected failures mark the job failed; unexpected failures leave its lease for
+recovery after the session rolls back. Current administrator membership and clean
+source status are checked before publication. Processing is at least once, not
+exactly once: failed or obsolete workers can leave private orphan objects for later
+reconciliation. A completed job is durable processing history; reading its artifact
+still checks current permissions, source state and object integrity.
+Migration 0009 adds job state; downgrading removes jobs but preserves saved artifacts.
