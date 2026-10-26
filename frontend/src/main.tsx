@@ -10,6 +10,7 @@ import {
 } from "./api";
 import { sampleLibrary } from "./sample";
 import "./style.css";
+import { QueueAction, RegisterDocument } from "./actions";
 
 function useRead<T>(load: (signal: AbortSignal) => Promise<T>) {
   const [state, setState] = useState<{
@@ -206,6 +207,8 @@ function JobStatus({
   const state = useRead((signal) =>
     library.job(revision.document_id, revision.id, kind, signal),
   );
+  const [submitted, setSubmitted] = useState<import("./api").Job>();
+  const job = submitted ?? state.data;
   return (
     <div className="job">
       <span>{kind === "scan" ? "Scan job" : "Extraction job"}</span>
@@ -213,15 +216,24 @@ function JobStatus({
         <Loading />
       ) : state.error ? (
         <ErrorMessage message={state.error} />
-      ) : state.data ? (
+      ) : job ? (
         <span>
-          <Badge status={state.data.status} />
+          <Badge status={job.status} />
           <small>
-            {state.data.attempts} attempt{state.data.attempts === 1 ? "" : "s"}
+            {job.attempts} attempt{job.attempts === 1 ? "" : "s"}
           </small>
         </span>
       ) : (
         <span className="muted">No queued job</span>
+      )}
+      {!state.loading && !state.error && library.actions && (
+        <QueueAction
+          actions={library.actions}
+          revision={revision}
+          kind={kind}
+          job={job ?? null}
+          onQueued={setSubmitted}
+        />
       )}
     </div>
   );
@@ -263,6 +275,12 @@ function RevisionDetails({
           Refresh jobs
         </button>
       </div>
+      {library.actions && (
+        <p className="muted">
+          Queue actions require tenant administrator access. Queued work waits
+          for a worker; it does not run immediately.
+        </p>
+      )}
       <JobStatus
         key={`scan-${refresh}`}
         library={library}
@@ -371,15 +389,38 @@ function Revisions({
 function Workspace({ library }: { library: Library }) {
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<Document>();
+  const [registering, setRegistering] = useState(false);
+  const [created, setCreated] = useState("");
+  const [refresh, setRefresh] = useState(0);
   return (
     <div className="workspace">
       <section className="panel library" aria-label="Documents">
         <div className="section-heading">
           <h2>All documents</h2>
-          <span className="muted">Read-only</span>
+          {library.actions ? (
+            <button onClick={() => setRegistering(true)}>New document</button>
+          ) : (
+            <span className="muted">Read-only</span>
+          )}
         </div>
+        {registering && library.actions && (
+          <RegisterDocument
+            actions={library.actions}
+            onClose={() => setRegistering(false)}
+            onCreated={(document) => {
+              setRegistering(false);
+              setCreated(document.name);
+              setSelected(document);
+              setOffset(0);
+              setRefresh((value) => value + 1);
+            }}
+          />
+        )}
+        {created && (
+          <p role="status">Registered {created}. No file has been uploaded.</p>
+        )}
         <DocumentPage
-          key={offset}
+          key={`${offset}-${refresh}`}
           library={library}
           offset={offset}
           selected={selected?.id}

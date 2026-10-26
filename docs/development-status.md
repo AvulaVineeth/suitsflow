@@ -1,6 +1,6 @@
 # Development handoff
 
-Updated October 20, 2026.
+Updated October 26, 2026.
 
 ## Implemented and merged
 
@@ -13,12 +13,14 @@ Updated October 20, 2026.
 
 ## Current slice
 
-Saved artifacts `7669f7e` and extraction jobs `3699e2f` passed exact-commit CI
-and are merged. The current slice, `feat/document-library-ui`, adds a read-only
-React/TypeScript library with document/revision pagination, processing status,
-saved text, explicit sample mode and a local API connection. Tokens stay in memory.
-The frontend build and seven Chromium tests pass locally. Exact-commit remote CI
-must pass before merge. No backend behavior or migrations changed in this slice.
+Saved artifacts `7669f7e`, extraction jobs `3699e2f`, and the document-library UI
+`0954d6c` passed exact-commit CI and are merged. The current branch
+`feat/document-library-actions` adds document registration and eligible scan/
+extraction enqueue/retry controls. Sample mode remains read-only. API authorization
+is authoritative, writes are not automatically retried, and uncertain responses
+require refreshing before another attempt. No backend or migration changes.
+The frontend build and 12 browser tests pass locally. Exact-commit CI gates
+the merge. Tests use intercepted HTTP requests; no live AWS calls were made.
 
 Local Docker image refresh remains blocked by UnknownIssuer when downloading
 packages. Trying the container system trust store did not resolve it; no TLS
@@ -28,8 +30,8 @@ No live AWS calls were made; extraction jobs are tested with in-memory storage.
 
 ## Next slices
 
-1. Validate and merge the document-library UI.
-2. Add document registration/upload UI and queued-processing controls.
+1. Validate and merge document registration and queue controls.
+2. Add revision registration/upload UI; live storage requires personal AWS confirmation.
 3. Add indexing, production identity, automatic scan enqueue and worker supervision.
 4. Reconcile private objects orphaned by interrupted uploads.
 

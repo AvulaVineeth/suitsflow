@@ -190,3 +190,145 @@ test("disconnect ignores a late API response", async ({ page }) => {
     page.getByRole("button", { name: /Live agreement/ }),
   ).toHaveCount(0);
 });
+
+test("registers a document once and opens the returned record", async ({
+  page,
+}) => {
+  let writes = 0;
+  await page.route("**/api/v1/documents**", async (route) => {
+    if (route.request().method() === "POST") {
+      writes++;
+      expect(route.request().headers().authorization).toBe("Bearer test-token");
+      expect(route.request().postDataJSON()).toEqual({
+        name: "New policy",
+        document_type: "policy",
+      });
+      return route.fulfill({
+        status: 201,
+        json: { ...document, name: "New policy" },
+      });
+    }
+    if (new URL(route.request().url()).pathname.endsWith("/versions"))
+      return route.fulfill({ json: [] });
+    return route.fulfill({
+      json: writes ? [{ ...document, name: "New policy" }] : [],
+    });
+  });
+  await connect(page);
+  await page.getByRole("button", { name: "New document" }).click();
+  await page.getByLabel("Document name").fill("  New policy  ");
+  await page.getByLabel("Document type").selectOption("policy");
+  await page
+    .getByRole("button", { name: "Register document", exact: true })
+    .click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Registered New policy" }),
+  ).toContainText("Registered New policy");
+  await expect(page.getByRole("heading", { name: "New policy" })).toBeVisible();
+  await expect(page.getByText("No revisions on this page.")).toBeVisible();
+  expect(writes).toBe(1);
+});
+
+test("an uncertain registration result is not silently retried", async ({
+  page,
+}) => {
+  let writes = 0;
+  await page.route("**/api/v1/documents**", (route) => {
+    if (route.request().method() === "POST") {
+      writes++;
+      return route.abort("failed");
+    }
+    return route.fulfill({ json: [] });
+  });
+  await connect(page);
+  await page.getByRole("button", { name: "New document" }).click();
+  await page.getByLabel("Document name").fill("A contract");
+  await page
+    .getByRole("button", { name: "Register document", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("may have succeeded");
+  await expect(
+    page.getByRole("button", { name: "Register document", exact: true }),
+  ).toBeDisabled();
+  expect(writes).toBe(1);
+});
+
+test("forbidden registration shows the required role without a success state", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/documents**", (route) =>
+    route.fulfill(
+      route.request().method() === "POST"
+        ? { status: 403, json: {} }
+        : { json: [] },
+    ),
+  );
+  await connect(page);
+  await page.getByRole("button", { name: "New document" }).click();
+  await page.getByLabel("Document name").fill("A contract");
+  await page
+    .getByRole("button", { name: "Register document", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Tenant administrator access",
+  );
+  await expect(page.getByText(/Registered A contract/)).toHaveCount(0);
+});
+
+test("queues extraction once and replaces retry with returned queued state", async ({
+  page,
+}) => {
+  let writes = 0;
+  await page.route("**/api/v1/documents**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === "POST") {
+      writes++;
+      expect(path).toBe(
+        "/api/v1/documents/doc-1/versions/version-1/extraction-job",
+      );
+      return route.fulfill({
+        status: 202,
+        json: { status: "pending", attempts: 1 },
+      });
+    }
+    if (path.endsWith("/versions")) return route.fulfill({ json: [revision] });
+    if (path.endsWith("/extraction-job"))
+      return route.fulfill({ json: { status: "failed", attempts: 1 } });
+    if (path.endsWith("/scan-job"))
+      return route.fulfill({ status: 404, json: {} });
+    return route.fulfill({ json: [document] });
+  });
+  await connect(page);
+  await page.getByRole("button", { name: /Live agreement/ }).click();
+  await expect(page.getByRole("button", { name: "Queue scan" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Retry extraction" }).click();
+  await expect(page.getByText("Queued", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Retry extraction" }),
+  ).toHaveCount(0);
+  expect(writes).toBe(1);
+});
+
+test("uncleared revisions offer scanning but never extraction", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/documents**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === "POST")
+      return route.fulfill({ status: 409, json: {} });
+    if (path.endsWith("/versions"))
+      return route.fulfill({
+        json: [{ ...revision, content_status: "pending_scan" }],
+      });
+    if (path.endsWith("-job")) return route.fulfill({ status: 404, json: {} });
+    return route.fulfill({ json: [document] });
+  });
+  await connect(page);
+  await page.getByRole("button", { name: /Live agreement/ }).click();
+  await expect(
+    page.getByRole("button", { name: "Queue extraction" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Queue scan" }).click();
+  await expect(page.getByRole("alert")).toContainText("not ready");
+  await expect(page.getByText("Queued", { exact: true })).toHaveCount(0);
+});

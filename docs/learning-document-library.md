@@ -13,7 +13,8 @@ now and keeps future AI processing behind the same authorization boundary.
 
 The last request reads a saved artifact. It does not call the on-demand `/text`
 parser. Opening the screen should not unexpectedly repeat expensive processing.
-Likewise, the first screen offers reads only, so opening it cannot enqueue work.
+Opening the screen cannot enqueue work. Explicit administrator actions now register
+documents and enqueue processing; browsing still performs reads only.
 
 ## Separate state from interpretation
 
@@ -65,3 +66,16 @@ pagination. It checks the mobile viewport for horizontal overflow. The existing
 backend integration suite separately checks the real database and authorization.
 These tests complement one another; browser mocks alone do not prove that a live
 deployment, identity provider or S3 account is configured correctly.
+
+## Mutations and uncertain outcomes
+
+The registration form sends one POST and opens the returned document. An in-flight
+guard prevents duplicate submissions. A network failure is reported as an unknown
+outcome because the database may already have committed. Automatically repeating
+a non-idempotent create could produce another document. The form therefore asks
+the user to refresh and check before submitting again.
+
+Queue endpoints are idempotent for an existing active job. Even so, the UI waits
+for the server response before displaying queued status and never claims that
+queueing means processing has completed. Eligibility controls improve usability;
+backend tenant, role and revision checks remain authoritative.

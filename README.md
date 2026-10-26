@@ -12,7 +12,7 @@ The project is built to demonstrate how modern GenAI systems can be engineered b
 
 ## Try the document library
 
-The read-only React UI is available locally at http://127.0.0.1:5173 after
+The React document-library UI is available locally at http://127.0.0.1:5173 after
 running `npm ci` and `npm run dev` from `frontend/`. It starts in a clearly
 labeled sample preview; no backend or AWS account is required for that preview.
 See [frontend setup](frontend/README.md) and the

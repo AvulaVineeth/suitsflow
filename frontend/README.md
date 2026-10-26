@@ -1,9 +1,9 @@
 # SuitsFlow document library
 
 React and TypeScript client for the existing tenant-scoped document API.
-This first slice is read-only: browse documents and revisions, inspect scan and
-extraction jobs, and read saved text. Uploads, job submission and production sign-in
-are not part of this screen yet.
+Browse documents and revisions, inspect scan and extraction jobs, and read saved
+text. In local API mode, administrators can register documents and queue eligible
+scan/extraction jobs. File upload and production sign-in are not implemented yet.
 
 ## Run locally
 
@@ -62,3 +62,19 @@ an approved same-origin gateway and replace development authentication with the
 planned production identity flow. Do not expose the development server publicly.
 
 See [the learning guide](../docs/learning-document-library.md) for the design rationale.
+
+## Registration and processing controls
+
+In local API mode, **New document** registers a name and type without uploading a
+file. The returned record opens in the inspector. Sample mode remains read-only.
+The server enforces administrator permissions; the UI does not infer permissions
+from the development token. Members receive a clear forbidden response.
+
+Pending-scan or scan-failed revisions can queue scans. Cleared revisions can queue
+extraction. Failed jobs offer retry; queued, running and completed jobs do not.
+A queued response means the request was recorded, not that a worker ran. Workers
+and live storage remain deferred until personal AWS configuration is confirmed.
+
+Writes are never automatically retried. If a response is lost, the server may have
+committed; refresh the library/jobs before trying again. Disconnecting or leaving
+a view cancels its browser request but cannot undo a server commit.
