@@ -10,6 +10,13 @@ The project is built to demonstrate how modern GenAI systems can be engineered b
 
 ---
 
+## LangGraph implementation status
+
+An internal contract-review graph now loads authorized saved text, calls an injected
+model, validates exact quotations, and rechecks access. Tests use fake models;
+Bedrock, durable review records, and review API/UI integration are still pending.
+See [the graph learning guide](docs/learning-review-graph.md).
+
 ## Try the document library
 
 The React document-library UI is available locally at http://127.0.0.1:5173 after

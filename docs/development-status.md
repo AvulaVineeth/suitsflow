@@ -13,14 +13,14 @@ Updated October 26, 2026.
 
 ## Current slice
 
-Saved artifacts `7669f7e`, extraction jobs `3699e2f`, and the document-library UI
-`0954d6c` passed exact-commit CI and are merged. The current branch
-`feat/document-library-actions` adds document registration and eligible scan/
-extraction enqueue/retry controls. Sample mode remains read-only. API authorization
-is authoritative, writes are not automatically retried, and uncertain responses
-require refreshing before another attempt. No backend or migration changes.
-The frontend build and 12 browser tests pass locally. Exact-commit CI gates
-the merge. Tests use intercepted HTTP requests; no live AWS calls were made.
+Document registration and processing controls `633939b` passed exact-commit CI
+and are merged, alongside the earlier library and extraction foundation.
+Current branch `feat/contract-review-graph` adds an internal LangGraph review path,
+strict evidence validation, bounded retries, current-membership checks and an
+injected model protocol. External tracing is explicitly disabled. No real model,
+API endpoint, review persistence, approval flow or durable checkpointing exists yet.
+Local validation: 151 tests passed, one Linux-only skip; lint, formatting and
+strict typing passed. Exact-commit CI must pass before merge. All model calls in tests are fake; AWS remains untouched.
 
 Local Docker image refresh remains blocked by UnknownIssuer when downloading
 packages. Trying the container system trust store did not resolve it; no TLS
@@ -30,10 +30,11 @@ No live AWS calls were made; extraction jobs are tested with in-memory storage.
 
 ## Next slices
 
-1. Validate and merge document registration and queue controls.
-2. Add revision registration/upload UI; live storage requires personal AWS confirmation.
-3. Add indexing, production identity, automatic scan enqueue and worker supervision.
-4. Reconcile private objects orphaned by interrupted uploads.
+1. Validate and merge the bounded contract-review graph.
+2. Add durable review records, audits and background review jobs before API/UI exposure.
+3. Add a model adapter and semantic/prompt-injection evaluations; real Bedrock requires personal AWS confirmation.
+4. Continue revision upload UI, indexing, production identity and worker supervision.
+5. Reconcile private objects orphaned by interrupted uploads.
 
 ## Seeing progress and deployment boundaries
 

@@ -65,3 +65,13 @@ Risk analysis produces a typed result rather than parsed prose: `category`, `sev
 ## Initial implementation
 
 Implement three typed paths: policy Q&A, contract-expiration lookup, and contract-risk review. Use a single graph with deterministic routing before adding planning loops or multiple agents.
+
+### Implementation checkpoint (October 26, 2026)
+
+The first bounded path is an internal contract-review StateGraph: authorized saved
+text → injected model → schema/evidence validation → access recheck → result.
+Tests use fake models. Durable state, persisted reviews, audited lifecycle,
+production model integration, API/UI exposure, the other two paths and approval
+interrupt/resume remain unimplemented. The state model above is the target design,
+not a claim that this initial in-memory graph supports crash recovery.
+See [the implementation learning guide](../learning-review-graph.md).
